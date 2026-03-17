@@ -39,3 +39,52 @@ body::before {
 ::selection {
   background: rgba(13, 148, 136, 0.2);
 }
+
+.timeline-slider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+.timeline-slider::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+
+.timeline-slider::-moz-range-track {
+  height: 100%;
+  background: transparent;
+}
+
+.timeline-slider::-webkit-slider-thumb {
+  appearance: none;
+  pointer-events: auto;
+  width: 22px;
+  height: 22px;
+  margin-top: 3px;
+  border-radius: 9999px;
+  border: 3px solid #ffffff;
+  background: #0f172a;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.35);
+  cursor: ew-resize;
+}
+
+.timeline-slider::-moz-range-thumb {
+  pointer-events: auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  border: 3px solid #ffffff;
+  background: #0f172a;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.35);
+  cursor: ew-resize;
+}
+
+.timeline-slider:disabled::-webkit-slider-thumb,
+.timeline-slider:disabled::-moz-range-thumb {
+  cursor: not-allowed;
+  opacity: 0.45;
+}

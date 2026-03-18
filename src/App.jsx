@@ -499,6 +499,38 @@ export default function App() {
           </div>
         </section>
 
+        <section className="overflow-hidden rounded-[30px] border border-emerald-200/70 bg-gradient-to-r from-emerald-50 via-white to-orange-50 p-5 shadow-[0_18px_50px_rgba(16,185,129,0.08)]">
+          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
+            <div className="space-y-2 text-center sm:text-left">
+              <span className="inline-flex rounded-full border border-emerald-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
+                PR
+              </span>
+              <p className="text-lg font-bold text-slate-950">スポンサーリンク</p>
+              <p className="max-w-xl text-sm leading-6 text-slate-600">
+                関連サービスのご案内です。気になる方はタップして詳細をチェックできます。
+              </p>
+            </div>
+            <div className="flex flex-col items-center gap-2 rounded-[24px] bg-white/90 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+              <a href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9" rel="nofollow">
+                <img
+                  border="0"
+                  width="165"
+                  height="120"
+                  alt="スポンサーリンク"
+                  src="https://www20.a8.net/svt/bgt?aid=260317021814&wid=001&eno=01&mid=s00000008903001079000&mc=1"
+                  className="h-auto rounded-xl"
+                />
+              </a>
+              <img
+                border="0"
+                width="1"
+                height="1"
+                src="https://www18.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
+                alt=""
+              />
+            </div>
+          </div>
+        </section>
         <div className="grid gap-6 xl:grid-cols-[1.18fr_0.92fr]">
           <div className="space-y-6">
             <SectionCard
@@ -549,7 +581,7 @@ export default function App() {
               >
                 <div className="rounded-full bg-white p-4 shadow-[0_12px_35px_rgba(15,23,42,0.08)]">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-orange-300 via-amber-200 to-teal-200 text-xl">
-                    ▷
+                    ?
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -693,28 +725,6 @@ export default function App() {
                 </div>
               </div>
             </SectionCard>
-
-            <SectionCard title="PR" copy="スポンサーリンク">
-              <div className="flex flex-col items-center gap-3 rounded-[24px] border border-slate-200 bg-slate-50/80 p-4 text-center">
-                <a href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9" rel="nofollow">
-                  <img
-                    border="0"
-                    width="165"
-                    height="120"
-                    alt="スポンサーリンク"
-                    src="https://www20.a8.net/svt/bgt?aid=260317021814&wid=001&eno=01&mid=s00000008903001079000&mc=1"
-                    className="rounded-xl"
-                  />
-                </a>
-                <img
-                  border="0"
-                  width="1"
-                  height="1"
-                  src="https://www18.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
-                  alt=""
-                />
-              </div>
-            </SectionCard>
             <SectionCard title="解析結果" copy="無音として検出された区間と、残す区間の数・削減量を確認できます。">
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-[24px] bg-slate-950 p-4 text-white">
@@ -819,6 +829,9 @@ export default function App() {
     </main>
   );
 }
+
+
+
 
 
 

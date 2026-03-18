@@ -1,0 +1,19 @@
+﻿<svg width="160" height="112" viewBox="0 0 160 112" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="moomooBg" x1="18" y1="12" x2="142" y2="100" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF8A3D" />
+      <stop offset="1" stop-color="#FF5F3C" />
+    </linearGradient>
+    <linearGradient id="moomooGlow" x1="36" y1="28" x2="118" y2="92" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF2E8" stop-opacity="0.95" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.7" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="152" height="104" rx="24" fill="url(#moomooBg)" />
+  <rect x="4" y="4" width="152" height="104" rx="24" stroke="#FFD7BE" stroke-width="2" />
+  <circle cx="126" cy="30" r="22" fill="#FFFFFF" fill-opacity="0.16" />
+  <circle cx="38" cy="86" r="28" fill="#FFFFFF" fill-opacity="0.12" />
+  <path d="M34 44C34 31.8497 43.8497 22 56 22H104C116.15 22 126 31.8497 126 44V68C126 80.1503 116.15 90 104 90H56C43.8497 90 34 80.1503 34 68V44Z" fill="url(#moomooGlow)" fill-opacity="0.22" />
+  <path d="M54 74V41.6H61.5L69.6 55.4L77.7 41.6H85.2V74H77.7V55.7L69.6 69.4L61.5 55.7V74H54Z" fill="white" />
+  <text x="80" y="96" text-anchor="middle" fill="white" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="0.18em">moomoo SECURITIES</text>
+</svg>

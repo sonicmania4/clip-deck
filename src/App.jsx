@@ -14,6 +14,7 @@ import {
   transcriptSegmentsToText,
 } from "./lib/whisper";
 import dmmfxBanner from "./assets/dmmfx-banner.svg";
+import moomooIcon from "./assets/moomoo-icon.svg";
 
 const ACCEPT_ATTRIBUTE = "video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi";
 const INPUT_PATH = "input-source";
@@ -384,13 +385,13 @@ function AffiliateBanner() {
   return (
     <div className="border-t border-gray-800 pt-6">
       <p className="text-center text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Recommended Financial Tools</p>
-      <div className="mt-6 flex flex-col items-center justify-center gap-8 md:flex-row md:items-stretch">
+      <div className="mt-6 flex flex-col items-center justify-center gap-6">
         <a
           href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
           rel="nofollow noopener noreferrer"
           target="_blank"
           aria-label="DMM FX の詳細を見る"
-          className="group flex w-full max-w-[420px] flex-col items-center gap-4 rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.1)] sm:flex-row"
+          className="group flex w-full max-w-[560px] flex-col items-center gap-4 rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.1)] sm:flex-row"
         >
           <img
             src={dmmfxBanner}
@@ -404,6 +405,9 @@ function AffiliateBanner() {
             <p className="mt-2 text-lg font-black tracking-[-0.03em] text-slate-950">FX を始めるなら DMM FX</p>
             <p className="mt-2 text-sm leading-6 text-slate-500">口座開設や取引環境をチェックしたい人向けの公式ページです。</p>
           </div>
+          <span className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white transition group-hover:bg-emerald-600">
+            詳細を見る
+          </span>
         </a>
 
         <a
@@ -411,14 +415,21 @@ function AffiliateBanner() {
           rel="nofollow noopener noreferrer"
           target="_blank"
           aria-label="moomoo証券で投資を始める"
-          className="group flex w-full max-w-[420px] flex-col justify-between rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#fff7ed,#ffffff)] px-6 py-6 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-[1px] hover:border-orange-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.1)]"
+          className="group flex w-full max-w-[560px] flex-col items-center gap-4 rounded-[28px] border border-orange-200 bg-[linear-gradient(135deg,#fff7ed,#ffffff)] px-5 py-5 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-[1px] hover:border-orange-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.1)] sm:flex-row"
         >
-          <div>
+          <img
+            src={moomooIcon}
+            alt="moomoo証券 アイコン"
+            width="160"
+            height="112"
+            className="h-auto w-[160px] shrink-0 rounded-[20px] border border-orange-100"
+          />
+          <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-600">moomoo証券</p>
-            <p className="mt-3 text-2xl font-black tracking-[-0.04em] text-slate-950">moomoo証券で投資を始める</p>
-            <p className="mt-3 text-sm leading-6 text-slate-500">米国株や日本株をチェックしたい人向けに、シンプルな紹介リンクとして掲載しています。</p>
+            <p className="mt-2 text-lg font-black tracking-[-0.03em] text-slate-950">moomoo証券で投資を始める</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">アプリで銘柄チェックを始めたい人向けの紹介リンクです。DMM FX の下に並ぶよう固定表示しています。</p>
           </div>
-          <span className="mt-5 inline-flex w-fit items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white transition group-hover:bg-orange-500">
+          <span className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white transition group-hover:bg-orange-500">
             詳細を見る
           </span>
         </a>
@@ -1730,6 +1741,8 @@ export default function App() {
     </main>
   );
 }
+
+
 
 
 

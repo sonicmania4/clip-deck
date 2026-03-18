@@ -10,6 +10,8 @@ const ACCEPT_ATTRIBUTE = "video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi";
 const INPUT_PATH = "input-source";
 const SLIDER_STEP = 0.05;
 const MIN_CLIP_LENGTH = 0.2;
+const OUTPUT_MODE_LANDSCAPE = "landscape";
+const OUTPUT_MODE_PORTRAIT = "portrait";
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -35,9 +37,10 @@ function looksLikeVideo(file) {
   return file.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(file.name);
 }
 
-function buildOutputName(fileName) {
+function buildOutputName(fileName, outputMode) {
   const baseName = fileName.replace(/\.[^/.]+$/, "") || "clip";
-  return `${baseName}-trimmed.mp4`;
+  const suffix = outputMode === OUTPUT_MODE_PORTRAIT ? "vertical-trimmed" : "trimmed";
+  return `${baseName}-${suffix}.mp4`;
 }
 
 function parseTimeInputValue(value) {
@@ -122,6 +125,10 @@ function formatCompactTime(totalSeconds) {
 
   return `${head}${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
 }
+function getOutputModeLabel(outputMode) {
+  return outputMode === OUTPUT_MODE_PORTRAIT ? "縦 9:16" : "横のまま";
+}
+
 
 function Card({ children, className = "" }) {
   return (
@@ -146,7 +153,7 @@ function Metric({ label, value, strong = false }) {
 
 function AffiliateBanner() {
   return (
-    <div className="flex justify-center">
+    <div className="flex flex-wrap justify-center gap-4">
       <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
         <a
           href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
@@ -167,6 +174,30 @@ function AffiliateBanner() {
           width="1"
           height="1"
           src="https://www10.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
+          alt=""
+          className="h-px w-px opacity-0"
+        />
+      </div>
+      <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+        <a
+          href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
+          rel="nofollow noopener noreferrer"
+          target="_blank"
+          className="inline-flex justify-center"
+        >
+          <img
+            border="0"
+            width="165"
+            height="120"
+            alt=""
+            src="https://www27.a8.net/svt/bgt?aid=260317021814&wid=001&eno=01&mid=s00000008903001079000&mc=1"
+          />
+        </a>
+        <img
+          border="0"
+          width="1"
+          height="1"
+          src="https://www11.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
           alt=""
           className="h-px w-px opacity-0"
         />
@@ -196,6 +227,7 @@ export default function App() {
   const [trimEnd, setTrimEnd] = useState(0);
   const [startText, setStartText] = useState("00:00:00.0");
   const [endText, setEndText] = useState("00:00:00.0");
+  const [outputMode, setOutputMode] = useState(OUTPUT_MODE_LANDSCAPE);
   const [engineState, setEngineState] = useState("idle");
   const [statusMessage, setStatusMessage] = useState("動画を読み込むと、そのままブラウザ内でトリミングできます。");
   const [progress, setProgress] = useState(0);
@@ -419,7 +451,26 @@ export default function App() {
 
       activeJobRef.current = "trimming";
       setProgress(0.16);
-      setStatusMessage("選択した範囲を切り抜いています...");
+      setStatusMessage(outputMode === OUTPUT_MODE_PORTRAIT ? "縦 9:16 に整えながら切り抜いています..." : "選択した範囲を切り抜いています...");
+
+      const outputArgs =
+        outputMode === OUTPUT_MODE_PORTRAIT
+          ? [
+              "-filter_complex",
+              "[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,boxblur=20:2[bg];[0:v]scale=720:1280:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[vout]",
+              "-map",
+              "[vout]",
+              "-map",
+              "0:a?",
+            ]
+          : [
+              "-vf",
+              "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+              "-map",
+              "0:v:0",
+              "-map",
+              "0:a?",
+            ];
 
       const exitCode = await ffmpeg.exec([
         "-i",
@@ -428,14 +479,13 @@ export default function App() {
         formatFfmpegTimestamp(trimStart),
         "-t",
         formatFfmpegTimestamp(clipDuration),
+        ...outputArgs,
         "-c:v",
         "libx264",
         "-preset",
         "veryfast",
         "-crf",
         "20",
-        "-pix_fmt",
-        "yuv420p",
         "-c:a",
         "aac",
         "-movflags",
@@ -454,11 +504,11 @@ export default function App() {
       startTransition(() => {
         resultUrlRef.current = nextUrl;
         setResultUrl(nextUrl);
-        setResultName(buildOutputName(sourceFile.name));
+        setResultName(buildOutputName(sourceFile.name, outputMode));
         setResultSize(blob.size);
         setProgress(1);
         setEngineState("success");
-        setStatusMessage("切り抜きが完了しました。すぐにダウンロードできます。");
+        setStatusMessage(outputModeLabel + "で切り抜きが完了しました。すぐにダウンロードできます。");
       });
     } catch (error) {
       console.error(error);
@@ -482,6 +532,7 @@ export default function App() {
   const currentPercent = sourceDuration > 0 ? (currentTime / sourceDuration) * 100 : 0;
   const orientationLabel =
     videoSize.width > 0 && videoSize.height > 0 ? (videoSize.width >= videoSize.height ? "横動画" : "縦動画") : "動画";
+  const outputModeLabel = getOutputModeLabel(outputMode);
 
   return (
     <main className="relative min-h-screen overflow-hidden px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
@@ -504,12 +555,14 @@ export default function App() {
                 <h1 className="max-w-4xl text-4xl font-black tracking-[-0.06em] text-slate-950 sm:text-5xl lg:text-6xl">
                   横動画を読み込んで、
                   <br />
-                  欲しい時間だけ切り抜く。
+                  欲しい形で切り抜く。
                 </h1>
                 <p className="max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
-                  使い方はシンプルです。動画を選び、開始と終了を動かして、
-                  <span className="font-bold text-slate-900">「切り抜く」</span>
-                  を押すだけ。処理はすべてブラウザ内で完結します。
+                  使い方はシンプルです。動画を選び、開始と終了を動かし、
+                  <span className="font-bold text-slate-900">横のまま</span>
+                  か
+                  <span className="font-bold text-slate-900">縦 9:16</span>
+                  を選んで切り抜くだけ。処理はすべてブラウザ内で完結します。
                 </p>
               </div>
             </div>
@@ -769,6 +822,47 @@ export default function App() {
                 <Metric label="残す割合" value={sourceDuration > 0 ? `${keepRatio}%` : "--"} />
                 <Metric label="削る長さ" value={sourceDuration > 0 ? formatCompactTime(removedDuration) : "--"} />
               </div>
+                <div className="mt-5 rounded-[26px] border border-slate-200 bg-slate-50/85 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">書き出しの形</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">横のまま保存するか、SNS向けの縦 9:16 に整えるかを選べます。</p>
+                    </div>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700">{outputModeLabel}</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setOutputMode(OUTPUT_MODE_LANDSCAPE)}
+                      disabled={busy}
+                      className={`rounded-[20px] border px-4 py-4 text-left transition ${
+                        outputMode === OUTPUT_MODE_LANDSCAPE
+                          ? "border-slate-950 bg-slate-950 text-white"
+                          : "border-slate-200 bg-white text-slate-900 hover:border-slate-300"
+                      } disabled:cursor-not-allowed disabled:opacity-60`}
+                    >
+                      <p className="text-sm font-black">横のまま</p>
+                      <p className={`mt-1 text-xs leading-5 ${outputMode === OUTPUT_MODE_LANDSCAPE ? "text-white/70" : "text-slate-500"}`}>
+                        元の横動画サイズを保ったまま切り抜きます。
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOutputMode(OUTPUT_MODE_PORTRAIT)}
+                      disabled={busy}
+                      className={`rounded-[20px] border px-4 py-4 text-left transition ${
+                        outputMode === OUTPUT_MODE_PORTRAIT
+                          ? "border-cyan-700 bg-cyan-700 text-white"
+                          : "border-slate-200 bg-white text-slate-900 hover:border-slate-300"
+                      } disabled:cursor-not-allowed disabled:opacity-60`}
+                    >
+                      <p className="text-sm font-black">縦 9:16</p>
+                      <p className={`mt-1 text-xs leading-5 ${outputMode === OUTPUT_MODE_PORTRAIT ? "text-white/75" : "text-slate-500"}`}>
+                        映像を中央に残し、背景をぼかして縦動画に整えます。
+                      </p>
+                    </button>
+                  </div>
+                </div>
               <div className="mt-5 space-y-4">
                 <button
                   type="button"
@@ -822,7 +916,7 @@ export default function App() {
           <div className="mt-5">
             <AffiliateBanner />
           </div>
-          <p className="mt-6 text-center text-sm text-slate-400">Browser Video Trimmer powered by FFmpeg.wasm</p>
+          <p className="mt-6 text-center text-sm text-slate-400">Browser Video Trimmer powered by FFmpeg.wasm and A8 affiliate links</p>
         </Card>
       </div>
     </main>

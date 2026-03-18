@@ -10,6 +10,7 @@ import {
   sumIntervalDuration,
 } from "./lib/jumpcut";
 import { bytesToLabel, formatClock } from "./lib/time";
+import dmmFxBanner from "./assets/dmmfx-banner.svg";
 
 const ACCEPT_ATTRIBUTE = "video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi";
 const INPUT_DIR = "/input";
@@ -89,17 +90,18 @@ function AffiliateBanner() {
       <div className="flex justify-center">
         <a
           href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
-          rel="nofollow"
+          rel="nofollow noopener noreferrer"
+          target="_blank"
           aria-label="スポンサーリンク"
           className="inline-flex justify-center"
         >
           <img
             border="0"
-            width="165"
-            height="120"
-            alt=""
-            src="https://www20.a8.net/svt/bgt?aid=260317021814&wid=001&eno=01&mid=s00000008903001079000&mc=1"
-            className="block h-auto w-[165px]"
+            width="168"
+            height="93"
+            alt="DMM FX バナー"
+            src={dmmFxBanner}
+            className="block h-auto w-[168px]"
           />
         </a>
         <img
@@ -830,6 +832,7 @@ export default function App() {
     </main>
   );
 }
+
 
 
 

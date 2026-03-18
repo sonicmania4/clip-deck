@@ -1,0 +1,36 @@
+﻿<svg width="168" height="93" viewBox="0 0 168 93" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="168" height="93" rx="2" fill="white"/>
+  <g>
+    <text x="7" y="22" fill="#111111" font-family="Arial, 'Hiragino Sans', 'Yu Gothic UI', sans-serif" font-size="16" font-weight="800">DMM</text>
+    <text x="45" y="22" fill="#27C43A" font-family="Arial, 'Hiragino Sans', 'Yu Gothic UI', sans-serif" font-size="16" font-weight="900">FX</text>
+  </g>
+  <g transform="translate(112 8) rotate(9)">
+    <rect x="0" y="0" width="24" height="46" rx="4" fill="#10131A"/>
+    <rect x="2.2" y="4.2" width="19.6" height="36.5" rx="2.5" fill="url(#screenA)"/>
+    <rect x="9" y="1.8" width="6" height="1.4" rx="0.7" fill="#333A48"/>
+  </g>
+  <g transform="translate(132 14) rotate(-14)">
+    <rect x="0" y="0" width="24" height="46" rx="4" fill="#151922"/>
+    <rect x="2.2" y="4.2" width="19.6" height="36.5" rx="2.5" fill="url(#screenB)"/>
+    <rect x="9" y="1.8" width="6" height="1.4" rx="0.7" fill="#39414D"/>
+  </g>
+  <text x="19" y="42" fill="#232323" font-family="'Hiragino Sans', 'Yu Gothic UI', sans-serif" font-size="11.5" font-weight="700">取引高</text>
+  <text x="9" y="77" fill="#111111" font-family="'Hiragino Sans', 'Yu Gothic UI', sans-serif" font-size="23" font-weight="900">世界</text>
+  <text x="46" y="84" fill="#111111" font-family="Arial, sans-serif" font-size="62" font-weight="900">1</text>
+  <text x="83" y="78" fill="#111111" font-family="'Hiragino Sans', 'Yu Gothic UI', sans-serif" font-size="23" font-weight="900">位</text>
+  <text x="11" y="89" fill="#666666" font-family="'Hiragino Sans', 'Yu Gothic UI', sans-serif" font-size="7">※マネパネット証券(2024年)</text>
+  <rect x="144" y="75" width="21" height="14" rx="1.5" fill="#CFCFCF"/>
+  <text x="148.4" y="85.2" fill="white" font-family="Arial, sans-serif" font-size="9" font-weight="700">PR</text>
+  <defs>
+    <linearGradient id="screenA" x1="2.2" y1="4.2" x2="21.8" y2="40.7" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E9EDF6"/>
+      <stop offset="0.52" stop-color="#C6D5F1"/>
+      <stop offset="1" stop-color="#97B5F0"/>
+    </linearGradient>
+    <linearGradient id="screenB" x1="2.2" y1="4.2" x2="21.8" y2="40.7" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#11161F"/>
+      <stop offset="0.5" stop-color="#202C3F"/>
+      <stop offset="1" stop-color="#0E1725"/>
+    </linearGradient>
+  </defs>
+</svg>

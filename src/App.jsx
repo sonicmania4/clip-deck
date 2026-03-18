@@ -626,12 +626,12 @@ export default function App() {
       setExportProfile(nextRecommendedProfile);
       setLastLogLine("");
       setErrorMessage("");
-      setStatusMessage("動画の長さを読み込んでいます...");
+      setStatusMessage("まずは動画の長さだけ読み込んでいます...");
       setProgress(0);
       setEngineState(ffmpegRef.current?.loaded ? "ready" : "idle");
     });
 
-    void ensureFFmpegLoaded().catch(() => {});
+    // ffmpeg は切り抜き時にだけ読み込み、最初のプレビューを軽く保つ。
   }
 
   async function handleTrim() {
@@ -914,6 +914,7 @@ export default function App() {
                     ref={videoRef}
                     src={sourceUrl}
                     controls
+                    preload="metadata"
                     playsInline
                     onLoadedMetadata={(event) => {
                       const media = event.currentTarget;
@@ -945,7 +946,15 @@ export default function App() {
                       if (ffmpegRef.current?.loaded) {
                         setEngineState("ready");
                         setStatusMessage(getReadyMessage(nextRecommendedProfile));
+                      } else {
+                        setEngineState("idle");
+                        setStatusMessage("読み込み完了です。切り抜くときに編集エンジンを読み込みます。");
                       }
+                    }}
+                    onError={() => {
+                      setEngineState("error");
+                      setStatusMessage("この動画はプレビューを開けませんでした。");
+                      setErrorMessage("長さよりも、端末のメモリ不足やブラウザ未対応コーデックが原因のことがあります。mp4(H.264) だと開きやすいです。");
                     }}
                     onTimeUpdate={(event) => {
                       const nextTime = event.currentTarget.currentTime;

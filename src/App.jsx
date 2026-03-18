@@ -500,25 +500,47 @@ export default function App() {
         </section>
 
         <section className="overflow-hidden rounded-[30px] border border-emerald-200/70 bg-gradient-to-r from-emerald-50 via-white to-orange-50 p-5 shadow-[0_18px_50px_rgba(16,185,129,0.08)]">
-          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
+          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row sm:items-start">
             <div className="space-y-2 text-center sm:text-left">
               <span className="inline-flex rounded-full border border-emerald-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
                 PR
               </span>
               <p className="text-lg font-bold text-slate-950">スポンサーリンク</p>
               <p className="max-w-xl text-sm leading-6 text-slate-600">
-                関連サービスのご案内です。気になる方はタップして詳細をチェックできます。
+                画像が表示されない環境でも、下のカードから詳細ページを開けるようにしています。
               </p>
             </div>
-            <div className="flex flex-col items-center gap-2 rounded-[24px] bg-white/90 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
-              <a href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9" rel="nofollow">
+            <div className="w-full max-w-[360px]">
+              <a
+                href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
+                rel="nofollow"
+                className="group block rounded-[26px] border border-slate-900/10 bg-slate-950 p-4 text-white shadow-[0_18px_45px_rgba(15,23,42,0.18)] transition hover:translate-y-[-1px] hover:shadow-[0_24px_55px_rgba(15,23,42,0.24)]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-300">
+                      Affiliate Link
+                    </p>
+                    <p className="mt-2 text-base font-bold leading-6 text-white">
+                      動画編集まわりの関連サービスをチェック
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-white/70">
+                      タップすると提供ページへ移動します。画像が読み込めない場合でもこのカード全体から開けます。
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/90">
+                    詳しく見る
+                  </span>
+                </div>
                 <img
                   border="0"
                   width="165"
                   height="120"
                   alt="スポンサーリンク"
                   src="https://www20.a8.net/svt/bgt?aid=260317021814&wid=001&eno=01&mid=s00000008903001079000&mc=1"
-                  className="h-auto rounded-xl"
+                  loading="eager"
+                  decoding="async"
+                  className="mt-4 h-auto w-[165px] rounded-xl border border-white/10 bg-white/95 shadow-[0_10px_24px_rgba(15,23,42,0.18)]"
                 />
               </a>
               <img
@@ -527,6 +549,7 @@ export default function App() {
                 height="1"
                 src="https://www18.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
                 alt=""
+                className="sr-only"
               />
             </div>
           </div>
@@ -829,6 +852,7 @@ export default function App() {
     </main>
   );
 }
+
 
 
 

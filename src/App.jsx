@@ -1,23 +1,30 @@
-﻿import { FFmpeg, FFFSType } from "@ffmpeg/ffmpeg";
+﻿
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile } from "@ffmpeg/util";
 import { startTransition, useEffect, useRef, useState } from "react";
 import coreURL from "@ffmpeg/core?url";
 import wasmURL from "@ffmpeg/core/wasm?url";
-import {
-  buildJumpCutFilter,
-  buildKeepIntervals,
-  formatSavings,
-  parseSilenceLogs,
-  sumIntervalDuration,
-} from "./lib/jumpcut";
-import { bytesToLabel, formatClock } from "./lib/time";
-import dmmFxBanner from "./assets/dmmfx-banner.svg";
+import { bytesToLabel, formatClock, formatFfmpegTimestamp } from "./lib/time";
 
 const ACCEPT_ATTRIBUTE = "video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi";
-const INPUT_DIR = "/input";
-const OUTPUT_DIR = "/output";
+const INPUT_PATH = "input-source";
+const SLIDER_STEP = 0.05;
+const MIN_CLIP_LENGTH = 0.2;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function roundToStep(value) {
+  return Math.round(value / SLIDER_STEP) * SLIDER_STEP;
+}
+
+function getMinimumGap(duration) {
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return MIN_CLIP_LENGTH;
+  }
+
+  return Math.min(MIN_CLIP_LENGTH, Math.max(duration / 200, SLIDER_STEP));
 }
 
 function looksLikeVideo(file) {
@@ -29,133 +36,141 @@ function looksLikeVideo(file) {
 }
 
 function buildOutputName(fileName) {
-  const baseName = fileName.replace(/\.[^/.]+$/, "") || "jumpcut";
-  return `${baseName}-jumpcut.mp4`;
+  const baseName = fileName.replace(/\.[^/.]+$/, "") || "clip";
+  return `${baseName}-trimmed.mp4`;
 }
 
-function formatDetailedTime(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return "0.0s";
+function parseTimeInputValue(value) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
   }
 
-  if (seconds < 60) {
-    return `${seconds.toFixed(1)}s`;
+  const parts = trimmed.split(":");
+
+  if (parts.length === 0 || parts.length > 3 || parts.some((part) => !part)) {
+    return null;
   }
 
-  const rounded = Math.floor(seconds);
-  const hours = Math.floor(rounded / 3600);
-  const minutes = Math.floor((rounded % 3600) / 60);
-  const rest = rounded % 60;
+  const numbers = parts.map((part, index) => {
+    const pattern = index === parts.length - 1 ? /^\d+(?:\.\d+)?$/ : /^\d+$/;
+    return pattern.test(part) ? Number(part) : Number.NaN;
+  });
 
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
-}
-
-function phaseLabel(phase) {
-  if (phase === "loading") return "準備中";
-  if (phase === "analyzing") return "解析中";
-  if (phase === "rendering") return "結合中";
-  if (phase === "success") return "完了";
-  if (phase === "error") return "エラー";
-  if (phase === "ready") return "準備完了";
-  return "スタンバイ";
-}
-
-function phaseTone(phase) {
-  if (phase === "error") return "border-rose-200 bg-rose-50 text-rose-700";
-  if (phase === "success") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (phase === "loading" || phase === "analyzing" || phase === "rendering") {
-    return "border-teal-200 bg-teal-50 text-teal-800";
+  if (numbers.some((part) => !Number.isFinite(part) || part < 0)) {
+    return null;
   }
-  return "border-slate-200 bg-white/80 text-slate-700";
+
+  let hours = 0;
+  let minutes = 0;
+  let seconds = 0;
+
+  if (parts.length === 3) {
+    [hours, minutes, seconds] = numbers;
+  } else if (parts.length === 2) {
+    [minutes, seconds] = numbers;
+  } else {
+    [seconds] = numbers;
+  }
+
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || minutes >= 60 || seconds >= 60) {
+    return null;
+  }
+
+  return hours * 3600 + minutes * 60 + seconds;
 }
 
-function SectionCard({ title, copy, action, children }) {
+function parseLogTimestamp(line) {
+  const match = line.match(/time=(\d{2}:\d{2}:\d{2}(?:\.\d+)?)/);
+
+  if (!match) {
+    return null;
+  }
+
+  const [hours, minutes, seconds] = match[1].split(":");
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+}
+
+function formatEditableTime(totalSeconds) {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) {
+    return "00:00:00.0";
+  }
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${seconds
+    .toFixed(1)
+    .padStart(4, "0")}`;
+}
+
+function formatCompactTime(totalSeconds) {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) {
+    return "0.0秒";
+  }
+
+  if (totalSeconds < 60) {
+    return `${totalSeconds.toFixed(1)}秒`;
+  }
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const head = hours > 0 ? `${String(hours).padStart(2, "0")}:` : "";
+
+  return `${head}${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
+}
+
+function Card({ children, className = "" }) {
   return (
-    <section className="rounded-[30px] border border-white/75 bg-white/82 p-6 shadow-[0_20px_80px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:p-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-black tracking-[-0.03em] text-slate-950">{title}</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{copy}</p>
-        </div>
-        {action}
-      </div>
-      <div className="mt-6">{children}</div>
+    <section
+      className={`fade-up rounded-[32px] border border-white/75 bg-white/82 p-5 shadow-[0_20px_90px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:p-7 ${className}`}
+    >
+      {children}
     </section>
   );
 }
 
-function AffiliateBanner({ className = "" }) {
+function Metric({ label, value, strong = false }) {
   return (
-    <section className={`rounded-[30px] border border-white/75 bg-white/82 px-6 py-8 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:px-8 ${className}`}>
-      <div className="flex justify-center">
+    <div className={`rounded-[24px] p-4 ${strong ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-950"}`}>
+      <p className={`text-[11px] font-bold uppercase tracking-[0.24em] ${strong ? "text-white/55" : "text-slate-500"}`}>
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-black tracking-[-0.04em]">{value}</p>
+    </div>
+  );
+}
+
+function AffiliateBanner() {
+  return (
+    <div className="flex justify-center">
+      <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
         <a
           href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
           rel="nofollow noopener noreferrer"
           target="_blank"
-          aria-label="スポンサーリンク"
           className="inline-flex justify-center"
         >
           <img
             border="0"
-            width="168"
-            height="93"
-            alt="DMM FX バナー"
-            src={dmmFxBanner}
-            className="block h-auto w-[168px]"
+            width="165"
+            height="120"
+            alt=""
+            src="https://www26.a8.net/svt/bgt?aid=260317021814&wid=001&eno=01&mid=s00000008903001079000&mc=1"
           />
         </a>
         <img
           border="0"
           width="1"
           height="1"
-          src="https://www18.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
+          src="https://www10.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
           alt=""
-          className="sr-only"
+          className="h-px w-px opacity-0"
         />
       </div>
-    </section>
-  );
-}
-function RangeField({
-  label,
-  value,
-  min,
-  max,
-  step,
-  suffix,
-  helper,
-  onChange,
-}) {
-  return (
-    <div className="space-y-3 rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">{label}</p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">{helper}</p>
-        </div>
-        <div className="rounded-full bg-slate-950 px-3 py-1 text-sm font-bold text-white">
-          {value}
-          {suffix}
-        </div>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="control-slider h-3 w-full cursor-pointer appearance-none rounded-full bg-slate-200"
-      />
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-semibold text-slate-950 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
-      />
     </div>
   );
 }
@@ -164,27 +179,28 @@ export default function App() {
   const ffmpegRef = useRef(null);
   const ffmpegLoadPromiseRef = useRef(null);
   const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
   const sourceUrlRef = useRef("");
   const resultUrlRef = useRef("");
-  const activeStageRef = useRef("idle");
-  const stageDurationRef = useRef(0);
-  const analysisLinesRef = useRef([]);
+  const activeDurationRef = useRef(0);
+  const activeJobRef = useRef("idle");
+  const previewLoopRef = useRef(false);
 
   const [dragActive, setDragActive] = useState(false);
   const [sourceFile, setSourceFile] = useState(null);
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceDuration, setSourceDuration] = useState(0);
-  const [noiseDb, setNoiseDb] = useState(-30);
-  const [silenceWindow, setSilenceWindow] = useState(0.5);
-  const [phase, setPhase] = useState("idle");
-  const [statusMessage, setStatusMessage] = useState(
-    "動画を読み込むと、ブラウザ内で silencedetect 解析の準備を始めます。",
-  );
+  const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
+  const [currentTime, setCurrentTime] = useState(0);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+  const [startText, setStartText] = useState("00:00:00.0");
+  const [endText, setEndText] = useState("00:00:00.0");
+  const [engineState, setEngineState] = useState("idle");
+  const [statusMessage, setStatusMessage] = useState("動画を読み込むと、そのままブラウザ内でトリミングできます。");
   const [progress, setProgress] = useState(0);
   const [lastLogLine, setLastLogLine] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const [silences, setSilences] = useState([]);
-  const [keepIntervals, setKeepIntervals] = useState([]);
   const [resultUrl, setResultUrl] = useState("");
   const [resultName, setResultName] = useState("");
   const [resultSize, setResultSize] = useState(0);
@@ -196,6 +212,14 @@ export default function App() {
   useEffect(() => {
     resultUrlRef.current = resultUrl;
   }, [resultUrl]);
+
+  useEffect(() => {
+    setStartText(formatEditableTime(trimStart));
+  }, [trimStart]);
+
+  useEffect(() => {
+    setEndText(formatEditableTime(trimEnd));
+  }, [trimEnd]);
 
   useEffect(() => {
     return () => {
@@ -222,13 +246,6 @@ export default function App() {
     setResultSize(0);
   }
 
-  function resetAnalysis() {
-    setSilences([]);
-    setKeepIntervals([]);
-    setLastLogLine("");
-    analysisLinesRef.current = [];
-  }
-
   async function ensureFFmpegLoaded() {
     if (ffmpegRef.current?.loaded) {
       return ffmpegRef.current;
@@ -246,61 +263,44 @@ export default function App() {
 
         setLastLogLine(line);
 
-        if (activeStageRef.current === "analyzing") {
-          analysisLinesRef.current.push(line);
-        }
-
-        const timeMatch = line.match(/time=(\d{2}:\d{2}:\d{2}(?:\.\d+)?)/);
-
-        if (!timeMatch || stageDurationRef.current <= 0) {
+        if (activeJobRef.current !== "trimming") {
           return;
         }
 
-        const [hours, minutes, seconds] = timeMatch[1].split(":");
-        const currentSeconds = Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
-        const ratio = clamp(currentSeconds / stageDurationRef.current, 0, 1);
+        const loggedTime = parseLogTimestamp(line);
 
-        if (activeStageRef.current === "analyzing") {
-          setProgress(0.12 + ratio * 0.38);
+        if (loggedTime == null || activeDurationRef.current <= 0) {
+          return;
         }
 
-        if (activeStageRef.current === "rendering") {
-          setProgress(0.56 + ratio * 0.4);
-        }
+        const ratio = clamp(loggedTime / activeDurationRef.current, 0, 0.98);
+        setProgress(0.16 + ratio * 0.8);
       });
 
       ffmpegRef.current = ffmpeg;
     }
 
     if (!ffmpegLoadPromiseRef.current) {
-      setPhase("loading");
+      setEngineState("loading");
       setProgress(0.08);
       setErrorMessage("");
-      setStatusMessage("動画を読み込み中... ffmpeg.wasm をブラウザへロードしています。");
+      setStatusMessage("ffmpeg.wasm をブラウザに読み込んでいます...");
 
       ffmpegLoadPromiseRef.current = ffmpegRef.current
-        .load({
-          coreURL,
-          wasmURL,
-        })
-        .then(async () => {
-          await Promise.allSettled([
-            ffmpegRef.current.createDir(INPUT_DIR),
-            ffmpegRef.current.createDir(OUTPUT_DIR),
-          ]);
-          setPhase("ready");
-          setStatusMessage("準備完了。無音の閾値を調整して解析を開始できます。");
+        .load({ coreURL, wasmURL })
+        .then(() => {
+          setEngineState("ready");
           setProgress(0);
+          setStatusMessage("準備完了です。開始と終了を動かして切り抜いてください。");
           return ffmpegRef.current;
         })
         .catch((error) => {
           ffmpegRef.current?.terminate();
           ffmpegRef.current = null;
-          setPhase("error");
-          setErrorMessage(
-            "ffmpeg.wasm の読み込みに失敗しました。開発サーバーでは COOP / COEP ヘッダーを有効にしてください。",
-          );
-          setStatusMessage("準備に失敗しました。");
+          setEngineState("error");
+          setProgress(0);
+          setStatusMessage("編集エンジンの読み込みに失敗しました。");
+          setErrorMessage("Vite の開発サーバーか、COOP / COEP ヘッダー付きの静的配信で開いてください。");
           throw error;
         })
         .finally(() => {
@@ -311,11 +311,48 @@ export default function App() {
     return ffmpegLoadPromiseRef.current;
   }
 
+  function seekVideo(nextTime) {
+    if (!videoRef.current) {
+      return;
+    }
+
+    const clampedTime = clamp(nextTime, 0, sourceDuration || 0);
+    videoRef.current.currentTime = clampedTime;
+    setCurrentTime(clampedTime);
+  }
+
+  function updateTrimStart(nextTime, seek = true) {
+    if (sourceDuration <= 0) {
+      return;
+    }
+
+    const gap = getMinimumGap(sourceDuration);
+    const nextValue = roundToStep(clamp(nextTime, 0, Math.max(Math.min(trimEnd - gap, sourceDuration - gap), 0)));
+    setTrimStart(nextValue);
+
+    if (seek) {
+      seekVideo(nextValue);
+    }
+  }
+
+  function updateTrimEnd(nextTime, seek = true) {
+    if (sourceDuration <= 0) {
+      return;
+    }
+
+    const gap = getMinimumGap(sourceDuration);
+    const nextValue = roundToStep(clamp(nextTime, Math.min(trimStart + gap, sourceDuration), sourceDuration));
+    setTrimEnd(nextValue);
+
+    if (seek) {
+      seekVideo(nextValue);
+    }
+  }
   function handleSelectedFile(file) {
     if (!looksLikeVideo(file)) {
-      setPhase("error");
-      setErrorMessage("動画ファイルを選択してください。mp4 / mov / webm / mkv などに対応します。");
-      setStatusMessage("ファイル形式を確認してください。");
+      setEngineState("error");
+      setStatusMessage("動画ファイルを選んでください。");
+      setErrorMessage("mp4 / mov / webm / mkv / avi などの動画ファイルに対応しています。");
       return;
     }
 
@@ -323,125 +360,82 @@ export default function App() {
       URL.revokeObjectURL(sourceUrlRef.current);
     }
 
+    previewLoopRef.current = false;
+    resetResult();
+
     const nextUrl = URL.createObjectURL(file);
 
-    setSourceFile(file);
-    setSourceUrl(nextUrl);
-    setSourceDuration(0);
-    setErrorMessage("");
-    resetAnalysis();
-    resetResult();
-    setStatusMessage("動画を読み込みました。silencedetect の準備をしています。");
-    setPhase(ffmpegRef.current?.loaded ? "ready" : "idle");
-
-    void ensureFFmpegLoaded().catch(() => {
-      // UI state already reflects the error.
+    startTransition(() => {
+      setSourceFile(file);
+      setSourceUrl(nextUrl);
+      setSourceDuration(0);
+      setVideoSize({ width: 0, height: 0 });
+      setCurrentTime(0);
+      setTrimStart(0);
+      setTrimEnd(0);
+      setLastLogLine("");
+      setErrorMessage("");
+      setStatusMessage("動画の長さを読み込んでいます...");
+      setProgress(0);
+      setEngineState(ffmpegRef.current?.loaded ? "ready" : "idle");
     });
+
+    void ensureFFmpegLoaded().catch(() => {});
   }
 
-  function handleFileChange(event) {
-    const file = event.target.files?.[0];
-
-    if (file) {
-      handleSelectedFile(file);
-    }
-  }
-
-  function handleDrop(event) {
-    event.preventDefault();
-    setDragActive(false);
-
-    const file = event.dataTransfer.files?.[0];
-
-    if (file) {
-      handleSelectedFile(file);
-    }
-  }
-
-  async function handleJumpCut() {
-    if (!sourceFile) {
+  async function handleTrim() {
+    if (!sourceFile || sourceDuration <= 0) {
       return;
     }
 
-    if (sourceDuration <= 0) {
-      setPhase("error");
-      setErrorMessage("動画の長さを読み込み中です。プレビューが表示されてからもう一度実行してください。");
+    const clipDuration = roundToStep(trimEnd - trimStart);
+
+    if (clipDuration <= 0) {
+      setEngineState("error");
+      setStatusMessage("開始時間と終了時間を見直してください。");
+      setErrorMessage("終了時間は開始時間より後ろに設定してください。");
       return;
     }
 
     const ffmpeg = await ensureFFmpegLoaded();
-    const inputPath = `${INPUT_DIR}/${sourceFile.name}`;
-    const outputPath = `${OUTPUT_DIR}/jumpcut-${Date.now().toString(36)}.mp4`;
+    const inputExtension = sourceFile.name.match(/\.[^/.]+$/)?.[0] ?? ".mp4";
+    const inputPath = `${INPUT_PATH}${inputExtension}`;
+    const outputPath = `trimmed-${Date.now().toString(36)}.mp4`;
 
-    resetAnalysis();
+    previewLoopRef.current = false;
     resetResult();
     setErrorMessage("");
+    setLastLogLine("");
+    activeDurationRef.current = clipDuration;
 
     try {
-      await Promise.allSettled([
-        ffmpeg.unmount(INPUT_DIR),
-        ffmpeg.deleteFile(outputPath),
-      ]);
+      setEngineState("trimming");
+      setProgress(0.08);
+      setStatusMessage("動画を処理用メモリに準備しています...");
+      activeJobRef.current = "copying";
 
-      await ffmpeg.mount(FFFSType.WORKERFS, { files: [sourceFile] }, INPUT_DIR);
+      await Promise.allSettled([ffmpeg.deleteFile(inputPath), ffmpeg.deleteFile(outputPath)]);
+      await ffmpeg.writeFile(inputPath, await fetchFile(sourceFile));
 
-      activeStageRef.current = "analyzing";
-      stageDurationRef.current = sourceDuration;
-      analysisLinesRef.current = [];
-      setPhase("analyzing");
-      setProgress(0.12);
-      setStatusMessage("無音部分を解析中... silencedetect でログを収集中です。");
+      activeJobRef.current = "trimming";
+      setProgress(0.16);
+      setStatusMessage("選択した範囲を切り抜いています...");
 
-      const analysisCode = await ffmpeg.exec([
+      const exitCode = await ffmpeg.exec([
         "-i",
         inputPath,
-        "-vn",
-        "-af",
-        `silencedetect=noise=${noiseDb}dB:d=${silenceWindow.toFixed(1)}`,
-        "-f",
-        "null",
-        "-",
-      ]);
-
-      if (analysisCode !== 0) {
-        throw new Error("silencedetect analysis failed");
-      }
-
-      const parsedSilences = parseSilenceLogs(analysisLinesRef.current, sourceDuration);
-      const intervals = buildKeepIntervals(parsedSilences, sourceDuration);
-      const keptDuration = sumIntervalDuration(intervals);
-
-      startTransition(() => {
-        setSilences(parsedSilences);
-        setKeepIntervals(intervals);
-      });
-
-      if (!intervals.length || keptDuration <= 0) {
-        throw new Error("all content was detected as silence");
-      }
-
-      activeStageRef.current = "rendering";
-      stageDurationRef.current = keptDuration;
-      setPhase("rendering");
-      setProgress(0.56);
-      setStatusMessage("動画を結合中... 音がある区間だけをつないでいます。");
-
-      const filterGraph = buildJumpCutFilter(intervals);
-      const renderCode = await ffmpeg.exec([
-        "-i",
-        inputPath,
-        "-filter_complex",
-        filterGraph,
-        "-map",
-        "[outv]",
-        "-map",
-        "[outa]",
+        "-ss",
+        formatFfmpegTimestamp(trimStart),
+        "-t",
+        formatFfmpegTimestamp(clipDuration),
         "-c:v",
         "libx264",
         "-preset",
         "veryfast",
         "-crf",
-        "22",
+        "20",
+        "-pix_fmt",
+        "yuv420p",
         "-c:a",
         "aac",
         "-movflags",
@@ -449,113 +443,110 @@ export default function App() {
         outputPath,
       ]);
 
-      if (renderCode !== 0) {
-        throw new Error("jump cut rendering failed");
+      if (exitCode !== 0) {
+        throw new Error("ffmpeg trim failed");
       }
 
       const data = await ffmpeg.readFile(outputPath);
-      const blob = new Blob([data], { type: "video/mp4" });
+      const blob = new Blob([data instanceof Uint8Array ? data : new Uint8Array(data)], { type: "video/mp4" });
       const nextUrl = URL.createObjectURL(blob);
 
-      resultUrlRef.current = nextUrl;
-      setResultUrl(nextUrl);
-      setResultName(buildOutputName(sourceFile.name));
-      setResultSize(blob.size);
-      setProgress(1);
-      setPhase("success");
-      setStatusMessage("ジャンプカットが完了しました。ダウンロードして確認できます。");
+      startTransition(() => {
+        resultUrlRef.current = nextUrl;
+        setResultUrl(nextUrl);
+        setResultName(buildOutputName(sourceFile.name));
+        setResultSize(blob.size);
+        setProgress(1);
+        setEngineState("success");
+        setStatusMessage("切り抜きが完了しました。すぐにダウンロードできます。");
+      });
     } catch (error) {
       console.error(error);
-      setPhase("error");
-      setStatusMessage("無音カットに失敗しました。");
-      setErrorMessage(
-        "音声トラックがない動画か、フィルタ条件が厳しすぎる可能性があります。閾値を緩めて再試行してください。",
-      );
+      setEngineState("error");
+      setProgress(0);
+      setStatusMessage("切り抜きに失敗しました。");
+      setErrorMessage("もう一度試すか、別形式の動画で確認してください。");
     } finally {
-      activeStageRef.current = "idle";
-      stageDurationRef.current = 0;
-      await Promise.allSettled([
-        ffmpeg.deleteFile(outputPath),
-        ffmpeg.unmount(INPUT_DIR),
-      ]);
+      activeJobRef.current = "idle";
+      activeDurationRef.current = 0;
+      await Promise.allSettled([ffmpeg.deleteFile(inputPath), ffmpeg.deleteFile(outputPath)]);
     }
   }
 
-  const removedDuration = Math.max(0, sourceDuration - sumIntervalDuration(keepIntervals));
-  const savingsPercent = formatSavings(sourceDuration, sumIntervalDuration(keepIntervals));
-  const busy = phase === "loading" || phase === "analyzing" || phase === "rendering";
+  const busy = engineState === "loading" || engineState === "trimming";
+  const clipDuration = Math.max(trimEnd - trimStart, 0);
+  const removedDuration = Math.max(sourceDuration - clipDuration, 0);
+  const keepRatio = sourceDuration > 0 ? Math.round((clipDuration / sourceDuration) * 100) : 0;
+  const startPercent = sourceDuration > 0 ? (trimStart / sourceDuration) * 100 : 0;
+  const endPercent = sourceDuration > 0 ? (trimEnd / sourceDuration) * 100 : 0;
+  const currentPercent = sourceDuration > 0 ? (currentTime / sourceDuration) * 100 : 0;
+  const orientationLabel =
+    videoSize.width > 0 && videoSize.height > 0 ? (videoSize.width >= videoSize.height ? "横動画" : "縦動画") : "動画";
 
   return (
-    <main className="relative min-h-screen overflow-hidden px-4 py-8 text-slate-900 sm:px-6 lg:px-8">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-5rem] top-0 h-72 w-72 rounded-full bg-orange-300/30 blur-3xl" />
-        <div className="absolute right-[-4rem] top-24 h-80 w-80 rounded-full bg-teal-300/20 blur-3xl" />
-        <div className="absolute bottom-[-5rem] left-1/3 h-80 w-80 rounded-full bg-cyan-200/20 blur-3xl" />
+    <main className="relative min-h-screen overflow-hidden px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-[-4rem] top-[-3rem] h-72 w-72 rounded-full bg-[rgba(255,126,83,0.24)] blur-3xl" />
+        <div className="absolute right-[-5rem] top-20 h-96 w-96 rounded-full bg-[rgba(76,208,196,0.2)] blur-3xl" />
+        <div className="absolute bottom-[-8rem] left-1/3 h-[22rem] w-[22rem] rounded-full bg-[rgba(255,214,140,0.22)] blur-3xl" />
       </div>
 
       <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <section className="overflow-hidden rounded-[34px] border border-white/75 bg-white/78 p-6 shadow-[0_24px_90px_rgba(15,23,42,0.12)] backdrop-blur-xl sm:p-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl space-y-4">
+        <Card className="overflow-hidden">
+          <div className="flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
+            <div className="max-w-3xl space-y-5">
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-teal-700">
-                  100% Browser Side
-                </span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
-                  ffmpeg.wasm
-                </span>
+                <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-800">100% Browser Side</span>
+                <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-orange-700">ffmpeg.wasm</span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-600">No Server Cost</span>
               </div>
-              <div className="space-y-3">
-                <h1 className="max-w-3xl text-4xl font-black tracking-[-0.04em] text-slate-950 sm:text-5xl">
-                  SNS CLIPPER
+              <div className="space-y-4">
+                <h1 className="max-w-4xl text-4xl font-black tracking-[-0.06em] text-slate-950 sm:text-5xl lg:text-6xl">
+                  横動画を読み込んで、
+                  <br />
+                  欲しい時間だけ切り抜く。
                 </h1>
-                <p className="max-w-2xl text-base font-bold leading-7 text-slate-600 sm:text-lg">
-                  爆速。無劣化。切り抜き動画の革命。
+                <p className="max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
+                  使い方はシンプルです。動画を選び、開始と終了を動かして、
+                  <span className="font-bold text-slate-900">「切り抜く」</span>
+                  を押すだけ。処理はすべてブラウザ内で完結します。
                 </p>
               </div>
             </div>
-
-            <div className="grid gap-3 rounded-[28px] border border-slate-200/70 bg-slate-950 p-5 text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] sm:grid-cols-3 lg:min-w-[420px]">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-white/60">段階1</p>
-                <p className="mt-2 text-lg font-bold">silencedetect 解析</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-white/60">段階2</p>
-                <p className="mt-2 text-lg font-bold">カット&結合</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-white/60">処理場所</p>
-                <p className="mt-2 text-lg font-bold">ローカルブラウザ</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <AffiliateBanner className="bg-white/50 backdrop-blur-md rounded-[20px] border border-white/20 p-4" />
-        <div className="grid gap-6 xl:grid-cols-[1.18fr_0.92fr]">
-          <div className="space-y-6">
-            <SectionCard
-              title="動画を読み込む"
-              copy="mp4 などのローカル動画を追加すると、ブラウザ内で音声解析とジャンプカットが走ります。"
-              action={
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-                >
-                  ファイルを選択
-                </button>
-              }
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+              className="inline-flex items-center justify-center rounded-full bg-[linear-gradient(135deg,#ff7e53,#ffb443)] px-6 py-4 text-base font-black text-white shadow-[0_14px_30px_rgba(255,126,83,0.28)] transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={ACCEPT_ATTRIBUTE}
-                onChange={handleFileChange}
-                className="hidden"
-              />
+              動画を読み込む
+            </button>
+          </div>
+        </Card>
 
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPT_ATTRIBUTE}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              handleSelectedFile(file);
+            }
+            event.target.value = "";
+          }}
+          className="hidden"
+        />
+
+        <div className="grid gap-6 xl:grid-cols-[1.35fr_0.9fr]">
+          <Card>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-slate-500">Preview</p>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">大きなプレビューで、その場で範囲を決める</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">プレビューの下に開始と終了を置いているので、感覚的に使えます。</p>
+            </div>
+
+            {!sourceFile ? (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -569,281 +560,271 @@ export default function App() {
                 }}
                 onDragLeave={(event) => {
                   event.preventDefault();
-                  if (event.currentTarget.contains(event.relatedTarget)) {
-                    return;
+                  if (!event.currentTarget.contains(event.relatedTarget)) {
+                    setDragActive(false);
                   }
-                  setDragActive(false);
                 }}
-                onDrop={handleDrop}
-                className={`group flex min-h-[220px] w-full flex-col items-center justify-center gap-4 rounded-[28px] border-2 border-dashed px-6 py-10 text-center transition ${
-                  dragActive
-                    ? "border-teal-500 bg-teal-50"
-                    : "border-slate-300 bg-slate-50/70 hover:border-slate-400 hover:bg-slate-50"
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDragActive(false);
+                  const file = event.dataTransfer.files?.[0];
+                  if (file && !busy) {
+                    handleSelectedFile(file);
+                  }
+                }}
+                className={`mt-6 flex min-h-[420px] w-full flex-col items-center justify-center gap-5 rounded-[30px] border-2 border-dashed px-6 py-10 text-center transition ${
+                  dragActive ? "border-cyan-400 bg-cyan-50" : "border-slate-300 bg-slate-50/80 hover:border-slate-400"
                 }`}
               >
-                <div className="rounded-full bg-white p-4 shadow-[0_12px_35px_rgba(15,23,42,0.08)]">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-orange-300 via-amber-200 to-teal-200 text-xl">
-                    ?
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xl font-bold text-slate-900">動画ファイルをここへドロップ</p>
-                  <p className="text-sm text-slate-500">
-                    mp4 / mov / webm / mkv / avi などに対応。クリックでも選択できます。
-                  </p>
-                </div>
-                <div className="flex flex-wrap justify-center gap-2">
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-                    サーバー送信なし
-                  </span>
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-                    ログ解析で無音検出
-                  </span>
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[linear-gradient(135deg,rgba(255,126,83,0.18),rgba(66,206,194,0.2))] text-3xl">▶</div>
+                <div>
+                  <p className="text-2xl font-black tracking-[-0.04em] text-slate-950">ここに動画をドロップ</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">クリックで選択しても、そのままドラッグしても大丈夫です。</p>
                 </div>
               </button>
-
-              {sourceFile ? (
-                <div className="mt-6 space-y-4 rounded-[28px] border border-slate-200 bg-slate-50/80 p-5">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected File</p>
-                      <h3 className="mt-1 break-all text-lg font-bold text-slate-900">{sourceFile.name}</h3>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-                        {bytesToLabel(sourceFile.size)}
-                      </span>
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-                        {sourceDuration > 0 ? `尺 ${formatClock(sourceDuration)}` : "尺を解析中"}
-                      </span>
-                    </div>
+            ) : (
+              <div className="mt-6 space-y-5">
+                <div className="flex flex-col gap-3 rounded-[26px] border border-slate-200 bg-slate-50/85 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Selected Video</p>
+                    <h3 className="mt-2 truncate text-xl font-black tracking-[-0.04em] text-slate-950">{sourceFile.name}</h3>
                   </div>
-                  <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-950">
-                    <video
-                      src={sourceUrl}
-                      controls
-                      playsInline
-                      onLoadedMetadata={(event) => {
-                        const duration = Number.isFinite(event.currentTarget.duration)
-                          ? event.currentTarget.duration
-                          : 0;
-                        setSourceDuration(duration);
-                      }}
-                      className="aspect-video w-full bg-black"
-                    />
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">{bytesToLabel(sourceFile.size)}</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">{sourceDuration > 0 ? formatClock(sourceDuration) : "長さを取得中"}</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">{orientationLabel}</span>
                   </div>
                 </div>
-              ) : null}
-            </SectionCard>
 
-            <SectionCard
-              title="無音判定を調整"
-              copy="silencedetect の閾値をリアルタイムに変えて、どれくらいの小ささ・長さを無音とみなすか調整できます。"
-              action={
-                <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${phaseTone(phase)}`}>
-                  {phaseLabel(phase)}
-                </span>
-              }
-            >
-              <div className="grid gap-4 lg:grid-cols-2">
-                <RangeField
-                  label="無音とみなす音量"
-                  value={noiseDb}
-                  min={-60}
-                  max={-10}
-                  step={1}
-                  suffix="dB"
-                  helper="値を小さくするほど、小さな声まで拾いやすくなります。"
-                  onChange={(value) => setNoiseDb(clamp(Math.round(value), -60, -10))}
-                />
-                <RangeField
-                  label="無音とみなす長さ"
-                  value={silenceWindow}
-                  min={0.1}
-                  max={2}
-                  step={0.1}
-                  suffix="秒"
-                  helper="短くするほど細かい間もカットされ、長くするほど自然なテンポを残せます。"
-                  onChange={(value) => setSilenceWindow(clamp(Number(value.toFixed(1)), 0.1, 2))}
-                />
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={handleJumpCut}
-                  disabled={busy || !sourceFile || sourceDuration <= 0}
-                  className="inline-flex items-center justify-center rounded-[22px] bg-gradient-to-r from-slate-950 via-teal-900 to-emerald-800 px-5 py-4 text-base font-semibold text-white shadow-[0_16px_35px_rgba(15,23,42,0.22)] transition hover:translate-y-[-1px] hover:shadow-[0_20px_45px_rgba(15,23,42,0.28)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-                >
-                  {phase === "loading"
-                    ? "準備中..."
-                    : phase === "analyzing"
-                      ? "無音部分を解析中..."
-                      : phase === "rendering"
-                        ? "動画を結合中..."
-                        : "無音部分を自動カット"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNoiseDb(-30);
-                    setSilenceWindow(0.5);
-                  }}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
-                >
-                  推奨値に戻す
-                </button>
-              </div>
-            </SectionCard>
-          </div>
-
-          <div className="space-y-6">
-            <SectionCard title="処理ステータス" copy="ffmpeg.wasm の準備、解析、結合の進み具合をここで追えます。">
-              <div className="space-y-4">
-                <div className="overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className={`h-3 rounded-full bg-gradient-to-r from-orange-300 via-teal-400 to-emerald-500 transition-[width] duration-300 ${
-                      phase === "loading" ? "animate-pulse" : ""
-                    }`}
-                    style={{ width: `${Math.max(Math.round(progress * 100), phase === "success" ? 100 : 6)}%` }}
+                <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-slate-950 shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+                  <video
+                    ref={videoRef}
+                    src={sourceUrl}
+                    controls
+                    playsInline
+                    onLoadedMetadata={(event) => {
+                      const media = event.currentTarget;
+                      const duration = Number.isFinite(media.duration) ? media.duration : 0;
+                      setSourceDuration(duration);
+                      setVideoSize({ width: media.videoWidth ?? 0, height: media.videoHeight ?? 0 });
+                      setCurrentTime(0);
+                      setTrimStart(0);
+                      setTrimEnd(duration);
+                      if (ffmpegRef.current?.loaded) {
+                        setEngineState("ready");
+                        setStatusMessage("開始と終了を調整してから切り抜いてください。");
+                      }
+                    }}
+                    onTimeUpdate={(event) => {
+                      const nextTime = event.currentTarget.currentTime;
+                      setCurrentTime(nextTime);
+                      if (previewLoopRef.current && nextTime >= trimEnd) {
+                        event.currentTarget.pause();
+                        event.currentTarget.currentTime = trimStart;
+                        setCurrentTime(trimStart);
+                        previewLoopRef.current = false;
+                      }
+                    }}
+                    onSeeked={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                    className="aspect-video w-full bg-black object-contain"
                   />
                 </div>
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <p className="font-semibold text-slate-800">{statusMessage}</p>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
-                    {Math.round(progress * 100)}%
-                  </span>
-                </div>
-                {errorMessage ? (
-                  <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-4 text-sm leading-6 text-rose-700">
-                    {errorMessage}
-                  </div>
-                ) : null}
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">last ffmpeg log</p>
-                  <p className="mt-3 break-all font-mono text-xs leading-6 text-slate-600">
-                    {lastLogLine || "まだログはありません。処理開始後にここへ最新ログを表示します。"}
-                  </p>
-                </div>
-              </div>
-            </SectionCard>
-            <SectionCard title="解析結果" copy="無音として検出された区間と、残す区間の数・削減量を確認できます。">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-[24px] bg-slate-950 p-4 text-white">
-                  <p className="text-xs uppercase tracking-[0.16em] text-white/45">無音区間</p>
-                  <p className="mt-2 text-2xl font-black">{silences.length}</p>
-                </div>
-                <div className="rounded-[24px] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">残す区間</p>
-                  <p className="mt-2 text-2xl font-black text-slate-950">{keepIntervals.length}</p>
-                </div>
-                <div className="rounded-[24px] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">短縮率</p>
-                  <p className="mt-2 text-2xl font-black text-slate-950">{savingsPercent}%</p>
-                </div>
-              </div>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
-                  <p className="text-sm font-semibold text-slate-900">削除された無音</p>
-                  <p className="mt-2 text-xl font-black text-slate-950">{formatDetailedTime(removedDuration)}</p>
-                  <p className="mt-2 text-xs leading-6 text-slate-500">
-                    合計尺 {sourceDuration > 0 ? formatDetailedTime(sourceDuration) : "--"} のうち、無音として除外された長さです。
-                  </p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Metric label="開始" value={formatCompactTime(trimStart)} strong />
+                  <Metric label="クリップ長" value={formatCompactTime(clipDuration)} />
+                  <Metric label="終了" value={formatCompactTime(trimEnd)} />
                 </div>
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
-                  <p className="text-sm font-semibold text-slate-900">残る本編</p>
-                  <p className="mt-2 text-xl font-black text-slate-950">
-                    {formatDetailedTime(sumIntervalDuration(keepIntervals))}
-                  </p>
-                  <p className="mt-2 text-xs leading-6 text-slate-500">
-                    Stage 2 ではこの長さになるように、音がある区間だけを concat して1本へまとめます。
-                  </p>
-                </div>
-              </div>
 
-              <div className="mt-4 rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                <p className="text-sm font-semibold text-slate-900">検出された無音区間（先頭8件）</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {silences.length ? (
-                    silences.slice(0, 8).map((silence, index) => (
-                      <span
-                        key={`${silence.start}-${silence.end}-${index}`}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600"
+                <div className="rounded-[30px] border border-slate-200 bg-slate-50/75 p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-black text-slate-900">トリミング範囲</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">ハンドルを左右に動かすだけで、残したい時間が決まります。</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => updateTrimStart(currentTime)} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-700">現在位置を開始にする</button>
+                      <button type="button" onClick={() => updateTrimEnd(currentTime)} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-700">現在位置を終了にする</button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!videoRef.current) {
+                            return;
+                          }
+                          previewLoopRef.current = true;
+                          videoRef.current.currentTime = trimStart;
+                          setCurrentTime(trimStart);
+                          void videoRef.current.play().catch(() => {
+                            previewLoopRef.current = false;
+                          });
+                        }}
+                        className="rounded-full bg-slate-950 px-4 py-2 text-xs font-black text-white"
                       >
-                        {formatDetailedTime(silence.start)} - {formatDetailedTime(silence.end)}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-sm text-slate-500">まだ解析結果はありません。</span>
-                  )}
+                        選択範囲を再生
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 space-y-4">
+                    <div className="flex items-center justify-between text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
+                      <span>{formatEditableTime(trimStart)}</span>
+                      <span>{formatEditableTime(trimEnd)}</span>
+                    </div>
+                    <div className="relative h-16">
+                      <div className="absolute inset-x-0 top-1/2 h-3 -translate-y-1/2 rounded-full bg-slate-200" />
+                      <div className="absolute top-1/2 h-3 -translate-y-1/2 rounded-full bg-[linear-gradient(90deg,#ff7e53,#37c6ba)]" style={{ left: `${startPercent}%`, width: `${Math.max(endPercent - startPercent, 0)}%` }} />
+                      {sourceDuration > 0 ? <div className="absolute top-1/2 z-[1] h-7 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-950" style={{ left: `${currentPercent}%` }} /> : null}
+                      <input type="range" min={0} max={sourceDuration || 0} step={SLIDER_STEP} value={trimStart} onChange={(event) => updateTrimStart(Number(event.target.value))} disabled={sourceDuration <= 0} className="trim-range trim-range-start absolute inset-0 w-full" />
+                      <input type="range" min={0} max={sourceDuration || 0} step={SLIDER_STEP} value={trimEnd} onChange={(event) => updateTrimEnd(Number(event.target.value))} disabled={sourceDuration <= 0} className="trim-range trim-range-end absolute inset-0 w-full" />
+                    </div>
+                    <div className="flex items-center justify-between text-sm font-bold text-slate-500">
+                      <span>00:00:00.0</span>
+                      <span>{sourceDuration > 0 ? formatEditableTime(sourceDuration) : "--"}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-[26px] border border-slate-200 bg-white p-4">
+                      <p className="text-sm font-bold text-slate-900">開始時間</p>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={startText}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setStartText(nextValue);
+                          const parsed = parseTimeInputValue(nextValue);
+                          if (parsed != null && sourceDuration > 0) {
+                            updateTrimStart(parsed, false);
+                          }
+                        }}
+                        onBlur={() => {
+                          const parsed = parseTimeInputValue(startText);
+                          if (parsed == null || sourceDuration <= 0) {
+                            setStartText(formatEditableTime(trimStart));
+                          } else {
+                            updateTrimStart(parsed);
+                          }
+                        }}
+                        className="mt-3 w-full rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3 text-lg font-bold tracking-[0.04em] text-slate-950 outline-none focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100"
+                      />
+                    </div>
+                    <div className="rounded-[26px] border border-slate-200 bg-white p-4">
+                      <p className="text-sm font-bold text-slate-900">終了時間</p>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={endText}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setEndText(nextValue);
+                          const parsed = parseTimeInputValue(nextValue);
+                          if (parsed != null && sourceDuration > 0) {
+                            updateTrimEnd(parsed, false);
+                          }
+                        }}
+                        onBlur={() => {
+                          const parsed = parseTimeInputValue(endText);
+                          if (parsed == null || sourceDuration <= 0) {
+                            setEndText(formatEditableTime(trimEnd));
+                          } else {
+                            updateTrimEnd(parsed);
+                          }
+                        }}
+                        className="mt-3 w-full rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3 text-lg font-bold tracking-[0.04em] text-slate-950 outline-none focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </SectionCard>
+            )}
+          </Card>
 
-            <SectionCard
-              title="書き出し結果"
-              copy="ジャンプカット後の動画をプレビューして、そのまま保存できます。"
-              action={
-                resultUrl ? (
-                  <a
-                    href={resultUrl}
-                    download={resultName}
-                    className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500"
-                  >
+          <div className="space-y-6">
+            <Card>
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-slate-500">Process</p>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">処理状況</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">切り抜き中は進捗とログをここに出します。</p>
+              <div className="mt-6 space-y-4">
+                <div className="overflow-hidden rounded-full bg-slate-200">
+                  <div className={`h-3 rounded-full bg-[linear-gradient(90deg,#ff7e53,#37c6ba)] transition-[width] duration-300 ${engineState === "loading" ? "animate-pulse" : ""}`} style={{ width: `${Math.max(Math.round(progress * 100), busy ? 10 : 0)}%` }} />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-sm font-semibold leading-6 text-slate-800">{statusMessage}</p>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{Math.round(progress * 100)}%</span>
+                </div>
+                {errorMessage ? <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-4 text-sm leading-6 text-rose-700">{errorMessage}</div> : null}
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50/85 p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Last ffmpeg log</p>
+                  <p className="mt-3 min-h-[54px] break-all font-mono text-xs leading-6 text-slate-600">{lastLogLine || "ここに ffmpeg の最新ログが表示されます。"}</p>
+                </div>
+              </div>
+            </Card>
+
+            <Card>
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-slate-500">Action</p>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">切り抜きと保存</h2>
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                <Metric label="元の長さ" value={sourceDuration > 0 ? formatCompactTime(sourceDuration) : "--"} strong />
+                <Metric label="残す割合" value={sourceDuration > 0 ? `${keepRatio}%` : "--"} />
+                <Metric label="削る長さ" value={sourceDuration > 0 ? formatCompactTime(removedDuration) : "--"} />
+              </div>
+              <div className="mt-5 space-y-4">
+                <button
+                  type="button"
+                  onClick={handleTrim}
+                  disabled={sourceDuration <= 0 || busy || clipDuration <= 0}
+                  className="inline-flex w-full items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#0f172a,#0e7490)] px-6 py-4 text-lg font-black text-white shadow-[0_18px_38px_rgba(8,47,73,0.28)] transition disabled:cursor-not-allowed disabled:opacity-55"
+                >
+                  {engineState === "loading" ? "エンジンを読み込み中..." : busy ? "切り抜き中..." : "切り抜く"}
+                </button>
+                {resultUrl ? (
+                  <a href={resultUrl} download={resultName} className="inline-flex w-full items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#16a34a,#34d399)] px-6 py-4 text-lg font-black text-white shadow-[0_18px_38px_rgba(22,163,74,0.24)]">
                     ダウンロード
                   </a>
-                ) : null
-              }
-            >
+                ) : (
+                  <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50/80 px-5 py-6 text-center text-sm leading-6 text-slate-500">切り抜きが終わると、ここにダウンロードボタンが現れます。</div>
+                )}
+              </div>
+            </Card>
+
+            <Card>
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-slate-500">Result</p>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">書き出しプレビュー</h2>
               {resultUrl ? (
-                <div className="space-y-4">
-                  <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-950">
-                    <video src={resultUrl} controls playsInline className="aspect-video w-full bg-black" />
+                <div className="mt-6 space-y-4">
+                  <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-slate-950">
+                    <video src={resultUrl} controls playsInline className="aspect-video w-full bg-black object-contain" />
                   </div>
-                  <div className="grid gap-3 rounded-[24px] bg-slate-50 p-4 sm:grid-cols-3">
+                  <div className="grid gap-3 rounded-[26px] bg-slate-50 p-4 sm:grid-cols-2">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">ファイル名</p>
-                      <p className="mt-2 break-all text-sm font-semibold text-slate-900">{resultName}</p>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">ファイル名</p>
+                      <p className="mt-2 break-all text-sm font-bold text-slate-900">{resultName}</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">サイズ</p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">{bytesToLabel(resultSize)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">処理方式</p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">silencedetect + concat</p>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">サイズ</p>
+                      <p className="mt-2 text-sm font-bold text-slate-900">{bytesToLabel(resultSize)}</p>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50/80 px-6 py-10 text-center">
-                  <p className="text-lg font-semibold text-slate-800">まだ出力動画はありません</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
-                    解析と結合が終わると、ここに結果が表示されます。
-                  </p>
+                <div className="mt-6 rounded-[28px] border border-dashed border-slate-300 bg-slate-50/80 px-6 py-12 text-center">
+                  <p className="text-lg font-black tracking-[-0.04em] text-slate-900">まだ出力動画はありません</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">動画を読み込んで範囲を決めたら、ここに完成版が表示されます。</p>
                 </div>
               )}
-            </SectionCard>
+            </Card>
           </div>
         </div>
 
-        <footer className="mt-8 pb-8 text-center text-sm text-slate-400">
-          <p>© 2026 SNS Clipper. Built with FFmpeg.wasm.</p>
-        </footer>
+        <Card className="px-6 py-8">
+          <p className="text-center text-xs font-bold uppercase tracking-[0.26em] text-slate-500">Sponsor</p>
+          <div className="mt-5">
+            <AffiliateBanner />
+          </div>
+          <p className="mt-6 text-center text-sm text-slate-400">Browser Video Trimmer powered by FFmpeg.wasm</p>
+        </Card>
       </div>
     </main>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-

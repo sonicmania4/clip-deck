@@ -4,20 +4,22 @@
   color-scheme: light;
   font-family:
     Aptos,
-    "Hiragino Sans",
+    "Aptos Display",
     "Yu Gothic UI",
+    "Hiragino Sans",
     "BIZ UDPGothic",
     sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(255, 194, 168, 0.52), transparent 35%),
-    radial-gradient(circle at 86% 18%, rgba(120, 214, 198, 0.3), transparent 30%),
-    linear-gradient(180deg, #fbf6ef 0%, #eef5f1 100%);
+    radial-gradient(circle at top left, rgba(255, 126, 83, 0.28), transparent 36%),
+    radial-gradient(circle at 86% 18%, rgba(76, 208, 196, 0.24), transparent 32%),
+    linear-gradient(180deg, #fff9f2 0%, #edf5f2 100%);
 }
 
 body {
   margin: 0;
   min-height: 100vh;
   background: inherit;
+  color: #0f172a;
 }
 
 body::before {
@@ -26,35 +28,90 @@ body::before {
   inset: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(15, 23, 42, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.03) 1px, transparent 1px);
-  background-size: 24px 24px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.38), transparent 72%);
+    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.42), transparent 78%);
 }
 
 #root {
   min-height: 100vh;
 }
 
+button,
+input,
+video {
+  font: inherit;
+}
+
 ::selection {
-  background: rgba(13, 148, 136, 0.2);
+  background: rgba(20, 184, 166, 0.22);
 }
 
-.control-slider::-webkit-slider-thumb {
+.fade-up {
+  animation: rise-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.trim-range {
   appearance: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 9999px;
-  border: 3px solid #ffffff;
-  background: #0f172a;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.24);
+  pointer-events: none;
+  background: transparent;
 }
 
-.control-slider::-moz-range-thumb {
-  width: 22px;
-  height: 22px;
+.trim-range::-webkit-slider-runnable-track {
+  height: 0.75rem;
+  background: transparent;
+}
+
+.trim-range::-moz-range-track {
+  height: 0.75rem;
+  background: transparent;
+}
+
+.trim-range::-webkit-slider-thumb {
+  appearance: none;
+  pointer-events: auto;
+  width: 26px;
+  height: 26px;
+  margin-top: -7px;
   border-radius: 9999px;
-  border: 3px solid #ffffff;
-  background: #0f172a;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.24);
+  border: 4px solid #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+}
+
+.trim-range::-moz-range-thumb {
+  pointer-events: auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  border: 4px solid #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+}
+
+.trim-range-start::-webkit-slider-thumb {
+  background: #ff7e53;
+}
+
+.trim-range-start::-moz-range-thumb {
+  background: #ff7e53;
+}
+
+.trim-range-end::-webkit-slider-thumb {
+  background: #0f766e;
+}
+
+.trim-range-end::-moz-range-thumb {
+  background: #0f766e;
 }

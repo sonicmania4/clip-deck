@@ -1,12 +1,11 @@
-﻿
+
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import { startTransition, useEffect, useRef, useState } from "react";
 import coreURL from "@ffmpeg/core?url";
 import wasmURL from "@ffmpeg/core/wasm?url";
 import { bytesToLabel, formatClock, formatFfmpegTimestamp } from "./lib/time";
-import primaryAffiliateBanner from "./assets/a8-banner-primary.gif";
-import rakutenAffiliateBanner from "./assets/a8-banner-rakuten.gif";
+import dmmfxBanner from "./assets/dmmfx-banner.svg";
 
 const ACCEPT_ATTRIBUTE = "video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi";
 const INPUT_PATH = "input-source";
@@ -155,51 +154,36 @@ function Metric({ label, value, strong = false }) {
 
 function AffiliateBanner() {
   return (
-    <div className="flex flex-wrap justify-center gap-4">
-      <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+    <div className="flex justify-center">
+      <div className="w-full max-w-[560px]">
         <a
           href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
           rel="nofollow noopener noreferrer"
           target="_blank"
-          className="inline-flex justify-center"
+          aria-label="DMM FX の詳細を見る"
+          className="group flex w-full flex-col items-center gap-4 rounded-[28px] border border-slate-200 bg-white px-5 py-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.1)] sm:flex-row"
         >
           <img
-            border="0"
-            width="165"
-            height="120"
-            alt=""
-            src={primaryAffiliateBanner}
+            src={dmmfxBanner}
+            alt="DMM FX バナー"
+            width="168"
+            height="93"
+            className="h-auto w-[168px] shrink-0 rounded-md border border-slate-100"
           />
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-600">Affiliate</p>
+            <p className="mt-2 text-lg font-black tracking-[-0.03em] text-slate-950">DMM FX の公式ページを見る</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">バナー全体がリンクです。クリックするとアフィリエイトリンク先へ移動します。</p>
+          </div>
+          <span className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white transition group-hover:bg-emerald-600">
+            開く
+          </span>
         </a>
         <img
           border="0"
           width="1"
           height="1"
           src="https://www10.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
-          alt=""
-          className="h-px w-px opacity-0"
-        />
-      </div>
-      <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
-        <a
-          href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
-          rel="nofollow noopener noreferrer"
-          target="_blank"
-          className="inline-flex justify-center"
-        >
-          <img
-            border="0"
-            width="165"
-            height="120"
-            alt=""
-            src={rakutenAffiliateBanner}
-          />
-        </a>
-        <img
-          border="0"
-          width="1"
-          height="1"
-          src="https://www11.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
           alt=""
           className="h-px w-px opacity-0"
         />

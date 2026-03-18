@@ -13,6 +13,15 @@ const SLIDER_STEP = 0.05;
 const MIN_CLIP_LENGTH = 0.2;
 const OUTPUT_MODE_LANDSCAPE = "landscape";
 const OUTPUT_MODE_PORTRAIT = "portrait";
+const EXPORT_PROFILE_BALANCED = "balanced";
+const EXPORT_PROFILE_LIGHT = "light";
+const EXPORT_PROFILE_FAST = "fast";
+const FILE_SIZE_WARNING_BYTES = 350 * 1024 * 1024;
+const FILE_SIZE_DANGER_BYTES = 800 * 1024 * 1024;
+const SOURCE_DURATION_WARNING_SECONDS = 20 * 60;
+const SOURCE_DURATION_DANGER_SECONDS = 45 * 60;
+const CLIP_DURATION_WARNING_SECONDS = 5 * 60;
+const CLIP_DURATION_DANGER_SECONDS = 12 * 60;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -38,6 +47,17 @@ function looksLikeVideo(file) {
   return file.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(file.name);
 }
 
+function getFileExtension(fileName) {
+  return fileName.match(/\.[^/.]+$/)?.[0].toLowerCase() ?? ".mp4";
+}
+
+function supportsFastTrim(file) {
+  if (!file) {
+    return false;
+  }
+
+  return [".mp4", ".mov", ".m4v"].includes(getFileExtension(file.name));
+}
 function buildOutputName(fileName, outputMode) {
   const baseName = fileName.replace(/\.[^/.]+$/, "") || "clip";
   const suffix = outputMode === OUTPUT_MODE_PORTRAIT ? "vertical-trimmed" : "trimmed";
@@ -131,6 +151,206 @@ function getOutputModeLabel(outputMode) {
 }
 
 
+function getExportProfileLabel(profile) {
+  if (profile === EXPORT_PROFILE_FAST) {
+    return "高速カット";
+  }
+
+  if (profile === EXPORT_PROFILE_LIGHT) {
+    return "長尺向け";
+  }
+
+  return "標準画質";
+}
+
+function getExportProfileDescription(profile, outputMode) {
+  if (profile === EXPORT_PROFILE_FAST) {
+    return "再エンコードを避けて速く切り抜きます。切り位置が少し前後することがあります。";
+  }
+
+  if (profile === EXPORT_PROFILE_LIGHT) {
+    return outputMode === OUTPUT_MODE_PORTRAIT
+      ? "解像度を抑えて縦変換します。長めの動画でも比較的通りやすい設定です。"
+      : "解像度と圧縮を軽くして、長めの動画でも通りやすくします。";
+  }
+
+  return outputMode === OUTPUT_MODE_PORTRAIT
+    ? "見た目重視で 720 x 1280 に整えます。処理は少し重めです。"
+    : "元サイズを保ちながら丁寧に再エンコードします。";
+}
+
+function getRecommendedProfile({ sourceFile, sourceDuration, clipDuration, outputMode }) {
+  if (!sourceFile) {
+    return EXPORT_PROFILE_BALANCED;
+  }
+
+  const fileSize = sourceFile.size ?? 0;
+  const longSource = fileSize >= FILE_SIZE_WARNING_BYTES || sourceDuration >= SOURCE_DURATION_WARNING_SECONDS;
+  const veryLongSource = fileSize >= FILE_SIZE_DANGER_BYTES || sourceDuration >= SOURCE_DURATION_DANGER_SECONDS;
+  const longClip = clipDuration >= CLIP_DURATION_WARNING_SECONDS;
+  const veryLongClip = clipDuration >= CLIP_DURATION_DANGER_SECONDS;
+
+  if (outputMode === OUTPUT_MODE_PORTRAIT) {
+    return longSource || veryLongSource || longClip || veryLongClip ? EXPORT_PROFILE_LIGHT : EXPORT_PROFILE_BALANCED;
+  }
+
+  if (supportsFastTrim(sourceFile) && (veryLongSource || veryLongClip || fileSize >= FILE_SIZE_WARNING_BYTES)) {
+    return EXPORT_PROFILE_FAST;
+  }
+
+  if (longSource || longClip) {
+    return EXPORT_PROFILE_LIGHT;
+  }
+
+  return EXPORT_PROFILE_BALANCED;
+}
+
+function getProcessingRisk({ sourceFile, sourceDuration, clipDuration, outputMode, exportProfile }) {
+  const recommendedProfile = getRecommendedProfile({ sourceFile, sourceDuration, clipDuration, outputMode });
+  const fileSize = sourceFile?.size ?? 0;
+  let score = 0;
+
+  if (fileSize >= FILE_SIZE_DANGER_BYTES) {
+    score += 3;
+  } else if (fileSize >= FILE_SIZE_WARNING_BYTES) {
+    score += 2;
+  } else if (fileSize >= 150 * 1024 * 1024) {
+    score += 1;
+  }
+
+  if (sourceDuration >= SOURCE_DURATION_DANGER_SECONDS) {
+    score += 2;
+  } else if (sourceDuration >= SOURCE_DURATION_WARNING_SECONDS) {
+    score += 1;
+  }
+
+  if (clipDuration >= CLIP_DURATION_DANGER_SECONDS) {
+    score += 2;
+  } else if (clipDuration >= CLIP_DURATION_WARNING_SECONDS) {
+    score += 1;
+  }
+
+  if (outputMode === OUTPUT_MODE_PORTRAIT) {
+    score += 2;
+  }
+
+  if (exportProfile === EXPORT_PROFILE_LIGHT) {
+    score -= 2;
+  }
+
+  if (exportProfile === EXPORT_PROFILE_FAST && supportsFastTrim(sourceFile)) {
+    score -= 3;
+  }
+
+  score = clamp(score, 0, 8);
+
+  if (score >= 5) {
+    return {
+      level: "danger",
+      badge: "長尺注意",
+      title: "長尺のため、今の設定だと失敗しやすいです",
+      message: "ブラウザが元動画を丸ごとメモリに載せてから処理するので、長い動画や縦変換は途中で止まりやすくなります。",
+      hint: "短い範囲から試すか、長尺向けモードに切り替えると安定しやすくなります。",
+      recommendedProfile,
+    };
+  }
+
+  if (score >= 3) {
+    return {
+      level: "warning",
+      badge: "処理重め",
+      title: "やや重い条件です",
+      message: "端末によってはメモリ不足や待ち時間の増加が起きやすい条件です。",
+      hint: "長尺向けか高速カットを使うと、待ち時間と失敗率を下げやすくなります。",
+      recommendedProfile,
+    };
+  }
+
+  return {
+    level: "safe",
+    badge: "安定寄り",
+    title: "この設定なら比較的安定しています",
+    message: "今のところ強い負荷要因は少なめです。",
+    hint: "さらに速さを優先したいときだけ、長尺向けや高速カットに切り替えてください。",
+    recommendedProfile,
+  };
+}
+
+function getTrimStatusMessage(outputMode, exportProfile) {
+  if (exportProfile === EXPORT_PROFILE_FAST) {
+    return "高速カットで切り抜いています...";
+  }
+
+  if (exportProfile === EXPORT_PROFILE_LIGHT) {
+    return outputMode === OUTPUT_MODE_PORTRAIT
+      ? "長尺向けの軽い設定で縦 9:16 に整えています..."
+      : "長尺向けの軽い設定で切り抜いています...";
+  }
+
+  return outputMode === OUTPUT_MODE_PORTRAIT ? "縦 9:16 に整えながら切り抜いています..." : "選択した範囲を切り抜いています...";
+}
+
+function getTrimFailureMessage({ sourceFile, sourceDuration, clipDuration, outputMode, exportProfile }) {
+  if (exportProfile === EXPORT_PROFILE_FAST) {
+    return "高速カットでコピーできませんでした。動画の形式が合わない可能性があります。標準画質か長尺向けに切り替えて再試行してください。";
+  }
+
+  const risk = getProcessingRisk({ sourceFile, sourceDuration, clipDuration, outputMode, exportProfile });
+
+  if (risk.level === "danger") {
+    return "ブラウザのメモリ上限に達した可能性があります。範囲を短くするか、長尺向けモードにしてもう一度試してください。";
+  }
+
+  if (outputMode === OUTPUT_MODE_PORTRAIT) {
+    return "縦 9:16 変換は処理が重めです。長尺向けに切り替えるか、横のままで試すと成功しやすくなります。";
+  }
+
+  return "ブラウザ内変換で失敗しました。少し短い範囲か、長尺向けモードでもう一度試してください。";
+}
+
+function getReadyMessage(recommendedProfile) {
+  if (recommendedProfile === EXPORT_PROFILE_FAST) {
+    return "長尺動画です。まずは高速カットがおすすめです。";
+  }
+
+  if (recommendedProfile === EXPORT_PROFILE_LIGHT) {
+    return "長尺動画です。長尺向けモードにすると安定しやすくなります。";
+  }
+
+  return "開始と終了を調整してから切り抜いてください。";
+}
+
+function getLandscapeLightWidth(videoWidth) {
+  const safeWidth = Number.isFinite(videoWidth) && videoWidth > 0 ? videoWidth : 960;
+  return Math.max(Math.floor(Math.min(safeWidth, 960) / 2) * 2, 2);
+}
+
+function ChoiceCard({ selected, disabled, accent = "slate", badge, title, description, onClick }) {
+  const activeClassByAccent = {
+    slate: "border-slate-950 bg-slate-950 text-white",
+    cyan: "border-cyan-700 bg-cyan-700 text-white",
+    amber: "border-orange-500 bg-orange-500 text-white",
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-[20px] border px-4 py-4 text-left transition ${selected ? activeClassByAccent[accent] : "border-slate-200 bg-white text-slate-900 hover:border-slate-300"} disabled:cursor-not-allowed disabled:opacity-60`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-black">{title}</p>
+        {badge ? (
+          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${selected ? "bg-white/18 text-white" : "bg-orange-50 text-orange-700"}`}>
+            {badge}
+          </span>
+        ) : null}
+      </div>
+      <p className={`mt-2 text-xs leading-5 ${selected ? "text-white/75" : "text-slate-500"}`}>{description}</p>
+    </button>
+  );
+}
 function Card({ children, className = "" }) {
   return (
     <section
@@ -214,6 +434,7 @@ export default function App() {
   const [startText, setStartText] = useState("00:00:00.0");
   const [endText, setEndText] = useState("00:00:00.0");
   const [outputMode, setOutputMode] = useState(OUTPUT_MODE_LANDSCAPE);
+  const [exportProfile, setExportProfile] = useState(EXPORT_PROFILE_BALANCED);
   const [engineState, setEngineState] = useState("idle");
   const [statusMessage, setStatusMessage] = useState("動画を読み込むと、そのままブラウザ内でトリミングできます。");
   const [progress, setProgress] = useState(0);
@@ -253,6 +474,11 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (exportProfile === EXPORT_PROFILE_FAST && (outputMode === OUTPUT_MODE_PORTRAIT || !supportsFastTrim(sourceFile))) {
+      setExportProfile(getRecommendedProfile({ sourceFile, sourceDuration, clipDuration: Math.max(trimEnd - trimStart, 0), outputMode }));
+    }
+  }, [exportProfile, outputMode, sourceFile, sourceDuration, trimEnd, trimStart]);
   function resetResult() {
     if (resultUrlRef.current) {
       URL.revokeObjectURL(resultUrlRef.current);
@@ -382,6 +608,12 @@ export default function App() {
     resetResult();
 
     const nextUrl = URL.createObjectURL(file);
+    const nextRecommendedProfile = getRecommendedProfile({
+      sourceFile: file,
+      sourceDuration: 0,
+      clipDuration: 0,
+      outputMode,
+    });
 
     startTransition(() => {
       setSourceFile(file);
@@ -391,6 +623,7 @@ export default function App() {
       setCurrentTime(0);
       setTrimStart(0);
       setTrimEnd(0);
+      setExportProfile(nextRecommendedProfile);
       setLastLogLine("");
       setErrorMessage("");
       setStatusMessage("動画の長さを読み込んでいます...");
@@ -416,15 +649,30 @@ export default function App() {
     }
 
     const ffmpeg = await ensureFFmpegLoaded();
-    const inputExtension = sourceFile.name.match(/\.[^/.]+$/)?.[0] ?? ".mp4";
-    const inputPath = `${INPUT_PATH}${inputExtension}`;
+    const inputPath = `${INPUT_PATH}${getFileExtension(sourceFile.name)}`;
     const outputPath = `trimmed-${Date.now().toString(36)}.mp4`;
+    const canUseFastTrim = outputMode === OUTPUT_MODE_LANDSCAPE && supportsFastTrim(sourceFile);
+    const resolvedProfile =
+      exportProfile === EXPORT_PROFILE_FAST && !canUseFastTrim
+        ? getRecommendedProfile({ sourceFile, sourceDuration, clipDuration, outputMode })
+        : exportProfile;
+    const useFastTrim = resolvedProfile === EXPORT_PROFILE_FAST && canUseFastTrim;
+    const useLightProfile = resolvedProfile === EXPORT_PROFILE_LIGHT;
+    const trimStartTimestamp = formatFfmpegTimestamp(trimStart);
+    const clipDurationTimestamp = formatFfmpegTimestamp(clipDuration);
+    const portraitWidth = useLightProfile ? 540 : 720;
+    const portraitHeight = useLightProfile ? 960 : 1280;
+    const portraitBlur = useLightProfile ? 14 : 20;
 
     previewLoopRef.current = false;
     resetResult();
     setErrorMessage("");
     setLastLogLine("");
     activeDurationRef.current = clipDuration;
+
+    if (resolvedProfile !== exportProfile) {
+      setExportProfile(resolvedProfile);
+    }
 
     try {
       setEngineState("trimming");
@@ -437,50 +685,65 @@ export default function App() {
 
       activeJobRef.current = "trimming";
       setProgress(0.16);
-      setStatusMessage(outputMode === OUTPUT_MODE_PORTRAIT ? "縦 9:16 に整えながら切り抜いています..." : "選択した範囲を切り抜いています...");
+      setStatusMessage(getTrimStatusMessage(outputMode, resolvedProfile));
 
-      const outputArgs =
-        outputMode === OUTPUT_MODE_PORTRAIT
+      const landscapeFilter = useLightProfile
+        ? `scale=${getLandscapeLightWidth(videoSize.width)}:-2:flags=lanczos,format=yuv420p`
+        : "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p";
+
+      const outputArgs = useFastTrim
+        ? ["-map", "0:v:0", "-map", "0:a?"]
+        : outputMode === OUTPUT_MODE_PORTRAIT
           ? [
               "-filter_complex",
-              "[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,boxblur=20:2[bg];[0:v]scale=720:1280:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[vout]",
+              `[0:v]scale=${portraitWidth}:${portraitHeight}:force_original_aspect_ratio=increase,crop=${portraitWidth}:${portraitHeight},boxblur=${portraitBlur}:2[bg];[0:v]scale=${portraitWidth}:${portraitHeight}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[vout]`,
               "-map",
               "[vout]",
               "-map",
               "0:a?",
             ]
-          : [
-              "-vf",
-              "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
-              "-map",
-              "0:v:0",
-              "-map",
-              "0:a?",
-            ];
+          : ["-vf", landscapeFilter, "-map", "0:v:0", "-map", "0:a?"];
 
-      const exitCode = await ffmpeg.exec([
-        "-i",
-        inputPath,
-        "-ss",
-        formatFfmpegTimestamp(trimStart),
-        "-t",
-        formatFfmpegTimestamp(clipDuration),
-        ...outputArgs,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
-        "-c:a",
-        "aac",
-        "-movflags",
-        "+faststart",
-        outputPath,
-      ]);
+      const encoderArgs = useFastTrim
+        ? ["-c", "copy"]
+        : useLightProfile
+          ? ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-c:a", "aac", "-b:a", "96k"]
+          : ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac"];
+
+      const command = useFastTrim
+        ? [
+            "-ss",
+            trimStartTimestamp,
+            "-i",
+            inputPath,
+            "-t",
+            clipDurationTimestamp,
+            ...outputArgs,
+            ...encoderArgs,
+            "-movflags",
+            "+faststart",
+            "-avoid_negative_ts",
+            "make_zero",
+            outputPath,
+          ]
+        : [
+            "-i",
+            inputPath,
+            "-ss",
+            trimStartTimestamp,
+            "-t",
+            clipDurationTimestamp,
+            ...outputArgs,
+            ...encoderArgs,
+            "-movflags",
+            "+faststart",
+            outputPath,
+          ];
+
+      const exitCode = await ffmpeg.exec(command);
 
       if (exitCode !== 0) {
-        throw new Error("ffmpeg trim failed");
+        throw new Error(useFastTrim ? "ffmpeg fast trim failed" : "ffmpeg trim failed");
       }
 
       const data = await ffmpeg.readFile(outputPath);
@@ -494,14 +757,14 @@ export default function App() {
         setResultSize(blob.size);
         setProgress(1);
         setEngineState("success");
-        setStatusMessage(outputModeLabel + "で切り抜きが完了しました。すぐにダウンロードできます。");
+        setStatusMessage(`${getOutputModeLabel(outputMode)}・${getExportProfileLabel(resolvedProfile)}で切り抜きが完了しました。すぐにダウンロードできます。`);
       });
     } catch (error) {
       console.error(error);
       setEngineState("error");
       setProgress(0);
       setStatusMessage("切り抜きに失敗しました。");
-      setErrorMessage("もう一度試すか、別形式の動画で確認してください。");
+      setErrorMessage(getTrimFailureMessage({ sourceFile, sourceDuration, clipDuration, outputMode, exportProfile: resolvedProfile }));
     } finally {
       activeJobRef.current = "idle";
       activeDurationRef.current = 0;
@@ -519,6 +782,17 @@ export default function App() {
   const orientationLabel =
     videoSize.width > 0 && videoSize.height > 0 ? (videoSize.width >= videoSize.height ? "横動画" : "縦動画") : "動画";
   const outputModeLabel = getOutputModeLabel(outputMode);
+  const exportProfileLabel = getExportProfileLabel(exportProfile);
+  const recommendedProfile = getRecommendedProfile({ sourceFile, sourceDuration, clipDuration, outputMode });
+  const processingRisk = getProcessingRisk({ sourceFile, sourceDuration, clipDuration, outputMode, exportProfile });
+  const showProcessingAdvice = Boolean(sourceFile) && (processingRisk.level !== "safe" || recommendedProfile !== exportProfile);
+  const fastTrimAvailable = supportsFastTrim(sourceFile);
+  const riskToneClass =
+    processingRisk.level === "danger"
+      ? "border-rose-200 bg-rose-50 text-rose-800"
+      : processingRisk.level === "warning"
+        ? "border-orange-200 bg-orange-50 text-orange-800"
+        : "border-emerald-200 bg-emerald-50 text-emerald-800";
 
   return (
     <main className="relative min-h-screen overflow-hidden px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
@@ -644,14 +918,33 @@ export default function App() {
                     onLoadedMetadata={(event) => {
                       const media = event.currentTarget;
                       const duration = Number.isFinite(media.duration) ? media.duration : 0;
+                      const nextRecommendedProfile = getRecommendedProfile({
+                        sourceFile,
+                        sourceDuration: duration,
+                        clipDuration: duration,
+                        outputMode,
+                      });
+
                       setSourceDuration(duration);
                       setVideoSize({ width: media.videoWidth ?? 0, height: media.videoHeight ?? 0 });
                       setCurrentTime(0);
                       setTrimStart(0);
                       setTrimEnd(duration);
+                      setExportProfile((currentProfile) => {
+                        if (currentProfile === EXPORT_PROFILE_FAST && (outputMode === OUTPUT_MODE_PORTRAIT || !supportsFastTrim(sourceFile))) {
+                          return nextRecommendedProfile;
+                        }
+
+                        if (currentProfile === EXPORT_PROFILE_BALANCED && nextRecommendedProfile !== EXPORT_PROFILE_BALANCED) {
+                          return nextRecommendedProfile;
+                        }
+
+                        return currentProfile;
+                      });
+
                       if (ffmpegRef.current?.loaded) {
                         setEngineState("ready");
-                        setStatusMessage("開始と終了を調整してから切り抜いてください。");
+                        setStatusMessage(getReadyMessage(nextRecommendedProfile));
                       }
                     }}
                     onTimeUpdate={(event) => {
@@ -808,47 +1101,107 @@ export default function App() {
                 <Metric label="残す割合" value={sourceDuration > 0 ? `${keepRatio}%` : "--"} />
                 <Metric label="削る長さ" value={sourceDuration > 0 ? formatCompactTime(removedDuration) : "--"} />
               </div>
-                <div className="mt-5 rounded-[26px] border border-slate-200 bg-slate-50/85 p-4">
-                  <div className="flex items-center justify-between gap-4">
+
+              {showProcessingAdvice ? (
+                <div className={`mt-5 rounded-[26px] border p-4 ${riskToneClass}`}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="text-sm font-bold text-slate-900">書き出しの形</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">横のまま保存するか、SNS向けの縦 9:16 に整えるかを選べます。</p>
+                      <p className="text-sm font-black">{processingRisk.title}</p>
+                      <p className="mt-1 text-sm leading-6 opacity-90">{processingRisk.message}</p>
                     </div>
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700">{outputModeLabel}</span>
+                    <span className="rounded-full border border-current/20 bg-white/60 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em]">{processingRisk.badge}</span>
                   </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => setOutputMode(OUTPUT_MODE_LANDSCAPE)}
-                      disabled={busy}
-                      className={`rounded-[20px] border px-4 py-4 text-left transition ${
-                        outputMode === OUTPUT_MODE_LANDSCAPE
-                          ? "border-slate-950 bg-slate-950 text-white"
-                          : "border-slate-200 bg-white text-slate-900 hover:border-slate-300"
-                      } disabled:cursor-not-allowed disabled:opacity-60`}
-                    >
-                      <p className="text-sm font-black">横のまま</p>
-                      <p className={`mt-1 text-xs leading-5 ${outputMode === OUTPUT_MODE_LANDSCAPE ? "text-white/70" : "text-slate-500"}`}>
-                        元の横動画サイズを保ったまま切り抜きます。
-                      </p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOutputMode(OUTPUT_MODE_PORTRAIT)}
-                      disabled={busy}
-                      className={`rounded-[20px] border px-4 py-4 text-left transition ${
-                        outputMode === OUTPUT_MODE_PORTRAIT
-                          ? "border-cyan-700 bg-cyan-700 text-white"
-                          : "border-slate-200 bg-white text-slate-900 hover:border-slate-300"
-                      } disabled:cursor-not-allowed disabled:opacity-60`}
-                    >
-                      <p className="text-sm font-black">縦 9:16</p>
-                      <p className={`mt-1 text-xs leading-5 ${outputMode === OUTPUT_MODE_PORTRAIT ? "text-white/75" : "text-slate-500"}`}>
-                        映像を中央に残し、背景をぼかして縦動画に整えます。
-                      </p>
-                    </button>
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs leading-5 opacity-90">{processingRisk.hint}</p>
+                    {processingRisk.recommendedProfile !== exportProfile ? (
+                      <button
+                        type="button"
+                        onClick={() => setExportProfile(processingRisk.recommendedProfile)}
+                        disabled={busy}
+                        className="rounded-full bg-white px-4 py-2 text-xs font-black text-slate-900 shadow-sm transition hover:-translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        おすすめに切り替える
+                      </button>
+                    ) : (
+                      <span className="rounded-full border border-current/20 bg-white/60 px-3 py-2 text-xs font-black">現在: {exportProfileLabel}</span>
+                    )}
                   </div>
                 </div>
+              ) : null}
+
+              <div className="mt-5 rounded-[26px] border border-slate-200 bg-slate-50/85 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">書き出しの形</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">横のまま保存するか、SNS向けの縦 9:16 に整えるかを選べます。</p>
+                  </div>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700">{outputModeLabel}</span>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <ChoiceCard
+                    selected={outputMode === OUTPUT_MODE_LANDSCAPE}
+                    disabled={busy}
+                    accent="slate"
+                    title="横のまま"
+                    description="元の横動画サイズを保ったまま切り抜きます。"
+                    onClick={() => setOutputMode(OUTPUT_MODE_LANDSCAPE)}
+                  />
+                  <ChoiceCard
+                    selected={outputMode === OUTPUT_MODE_PORTRAIT}
+                    disabled={busy}
+                    accent="cyan"
+                    title="縦 9:16"
+                    description="映像を中央に残し、背景をぼかして縦動画に整えます。"
+                    onClick={() => setOutputMode(OUTPUT_MODE_PORTRAIT)}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-[26px] border border-slate-200 bg-slate-50/85 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">処理モード</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">長尺で詰まりやすいときは、ここを軽い設定にすると通りやすくなります。</p>
+                  </div>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700">{exportProfileLabel}</span>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  <ChoiceCard
+                    selected={exportProfile === EXPORT_PROFILE_BALANCED}
+                    disabled={busy}
+                    accent="slate"
+                    title="標準画質"
+                    description={getExportProfileDescription(EXPORT_PROFILE_BALANCED, outputMode)}
+                    badge={recommendedProfile === EXPORT_PROFILE_BALANCED ? "おすすめ" : undefined}
+                    onClick={() => setExportProfile(EXPORT_PROFILE_BALANCED)}
+                  />
+                  <ChoiceCard
+                    selected={exportProfile === EXPORT_PROFILE_LIGHT}
+                    disabled={busy}
+                    accent="amber"
+                    title="長尺向け"
+                    description={getExportProfileDescription(EXPORT_PROFILE_LIGHT, outputMode)}
+                    badge={recommendedProfile === EXPORT_PROFILE_LIGHT ? "おすすめ" : undefined}
+                    onClick={() => setExportProfile(EXPORT_PROFILE_LIGHT)}
+                  />
+                  <ChoiceCard
+                    selected={exportProfile === EXPORT_PROFILE_FAST}
+                    disabled={busy || !fastTrimAvailable || outputMode === OUTPUT_MODE_PORTRAIT}
+                    accent="cyan"
+                    title="高速カット"
+                    description={
+                      outputMode === OUTPUT_MODE_PORTRAIT
+                        ? "縦 9:16 では使えません。横のまま保存するときだけ選べます。"
+                        : fastTrimAvailable
+                          ? getExportProfileDescription(EXPORT_PROFILE_FAST, outputMode)
+                          : "mp4 / mov / m4v のときだけ使えます。対応形式では最も速い選択肢です。"
+                    }
+                    badge={recommendedProfile === EXPORT_PROFILE_FAST ? "おすすめ" : undefined}
+                    onClick={() => setExportProfile(EXPORT_PROFILE_FAST)}
+                  />
+                </div>
+              </div>
+
               <div className="mt-5 space-y-4">
                 <button
                   type="button"
@@ -856,7 +1209,7 @@ export default function App() {
                   disabled={sourceDuration <= 0 || busy || clipDuration <= 0}
                   className="inline-flex w-full items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#0f172a,#0e7490)] px-6 py-4 text-lg font-black text-white shadow-[0_18px_38px_rgba(8,47,73,0.28)] transition disabled:cursor-not-allowed disabled:opacity-55"
                 >
-                  {engineState === "loading" ? "エンジンを読み込み中..." : busy ? "切り抜き中..." : "切り抜く"}
+                  {engineState === "loading" ? "エンジンを読み込み中..." : busy ? "切り抜き中..." : `${exportProfileLabel}で切り抜く`}
                 </button>
                 {resultUrl ? (
                   <a href={resultUrl} download={resultName} className="inline-flex w-full items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#16a34a,#34d399)] px-6 py-4 text-lg font-black text-white shadow-[0_18px_38px_rgba(22,163,74,0.24)]">

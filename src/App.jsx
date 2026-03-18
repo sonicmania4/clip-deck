@@ -84,9 +84,9 @@ function SectionCard({ title, copy, action, children }) {
   );
 }
 
-function AffiliateBanner() {
+function AffiliateBanner({ className = "" }) {
   return (
-    <section className="rounded-[30px] border border-white/75 bg-white/82 px-6 py-8 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:px-8">
+    <section className={`rounded-[30px] border border-white/75 bg-white/82 px-6 py-8 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:px-8 ${className}`}>
       <div className="flex justify-center">
         <a
           href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
@@ -507,10 +507,10 @@ export default function App() {
               </div>
               <div className="space-y-3">
                 <h1 className="max-w-3xl text-4xl font-black tracking-[-0.04em] text-slate-950 sm:text-5xl">
-                  QuietCut Studio
+                  SNS CLIPPER
                 </h1>
-                <p className="max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
-                  無音部分だけを自動で見つけて切り落とし、話している区間だけをジャンプカットで1本に再構成します。解析も結合も、サーバーへ送らずブラウザの中だけで完結します。
+                <p className="max-w-2xl text-base font-bold leading-7 text-slate-600 sm:text-lg">
+                  爆速。無劣化。切り抜き動画の革命。
                 </p>
               </div>
             </div>
@@ -532,6 +532,7 @@ export default function App() {
           </div>
         </section>
 
+        <AffiliateBanner className="bg-white/50 backdrop-blur-md rounded-[20px] border border-white/20 p-4" />
         <div className="grid gap-6 xl:grid-cols-[1.18fr_0.92fr]">
           <div className="space-y-6">
             <SectionCard
@@ -827,11 +828,14 @@ export default function App() {
           </div>
         </div>
 
-        <AffiliateBanner />
+        <footer className="mt-8 pb-8 text-center text-sm text-slate-400">
+          <p>© 2026 SNS Clipper. Built with FFmpeg.wasm.</p>
+        </footer>
       </div>
     </main>
   );
 }
+
 
 
 

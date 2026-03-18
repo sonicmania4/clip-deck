@@ -5,6 +5,8 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import coreURL from "@ffmpeg/core?url";
 import wasmURL from "@ffmpeg/core/wasm?url";
 import { bytesToLabel, formatClock, formatFfmpegTimestamp } from "./lib/time";
+import primaryAffiliateBanner from "./assets/a8-banner-primary.gif";
+import rakutenAffiliateBanner from "./assets/a8-banner-rakuten.gif";
 
 const ACCEPT_ATTRIBUTE = "video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi";
 const INPUT_PATH = "input-source";
@@ -166,7 +168,7 @@ function AffiliateBanner() {
             width="165"
             height="120"
             alt=""
-            src="https://www26.a8.net/svt/bgt?aid=260317021814&wid=001&eno=01&mid=s00000008903001079000&mc=1"
+            src={primaryAffiliateBanner}
           />
         </a>
         <img
@@ -190,7 +192,7 @@ function AffiliateBanner() {
             width="165"
             height="120"
             alt=""
-            src="https://www27.a8.net/svt/bgt?aid=260317021814&wid=001&eno=01&mid=s00000008903001079000&mc=1"
+            src={rakutenAffiliateBanner}
           />
         </a>
         <img

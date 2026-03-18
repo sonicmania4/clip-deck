@@ -694,6 +694,27 @@ export default function App() {
               </div>
             </SectionCard>
 
+            <SectionCard title="PR" copy="スポンサーリンク">
+              <div className="flex flex-col items-center gap-3 rounded-[24px] border border-slate-200 bg-slate-50/80 p-4 text-center">
+                <a href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9" rel="nofollow">
+                  <img
+                    border="0"
+                    width="165"
+                    height="120"
+                    alt="スポンサーリンク"
+                    src="https://www20.a8.net/svt/bgt?aid=260317021814&wid=001&eno=01&mid=s00000008903001079000&mc=1"
+                    className="rounded-xl"
+                  />
+                </a>
+                <img
+                  border="0"
+                  width="1"
+                  height="1"
+                  src="https://www18.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
+                  alt=""
+                />
+              </div>
+            </SectionCard>
             <SectionCard title="解析結果" copy="無音として検出された区間と、残す区間の数・削減量を確認できます。">
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-[24px] bg-slate-950 p-4 text-white">
@@ -798,4 +819,6 @@ export default function App() {
     </main>
   );
 }
+
+
 

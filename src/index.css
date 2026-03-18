@@ -10,8 +10,8 @@
     sans-serif;
   background:
     radial-gradient(circle at top left, rgba(255, 194, 168, 0.52), transparent 35%),
-    radial-gradient(circle at 86% 18%, rgba(130, 205, 178, 0.34), transparent 30%),
-    linear-gradient(180deg, #fbf6ef 0%, #eff5f0 100%);
+    radial-gradient(circle at 86% 18%, rgba(120, 214, 198, 0.3), transparent 30%),
+    linear-gradient(180deg, #fbf6ef 0%, #eef5f1 100%);
 }
 
 body {
@@ -29,7 +29,7 @@ body::before {
     linear-gradient(rgba(15, 23, 42, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(15, 23, 42, 0.03) 1px, transparent 1px);
   background-size: 24px 24px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.4), transparent 70%);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.38), transparent 72%);
 }
 
 #root {
@@ -40,51 +40,21 @@ body::before {
   background: rgba(13, 148, 136, 0.2);
 }
 
-.timeline-slider {
-  position: absolute;
-  inset: 0;
-  width: 100%;
+.control-slider::-webkit-slider-thumb {
   appearance: none;
-  background: transparent;
-  pointer-events: none;
-}
-
-.timeline-slider::-webkit-slider-runnable-track {
-  height: 100%;
-  background: transparent;
-}
-
-.timeline-slider::-moz-range-track {
-  height: 100%;
-  background: transparent;
-}
-
-.timeline-slider::-webkit-slider-thumb {
-  appearance: none;
-  pointer-events: auto;
-  width: 22px;
-  height: 22px;
-  margin-top: 3px;
-  border-radius: 9999px;
-  border: 3px solid #ffffff;
-  background: #0f172a;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.35);
-  cursor: ew-resize;
-}
-
-.timeline-slider::-moz-range-thumb {
-  pointer-events: auto;
   width: 22px;
   height: 22px;
   border-radius: 9999px;
   border: 3px solid #ffffff;
   background: #0f172a;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.35);
-  cursor: ew-resize;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.24);
 }
 
-.timeline-slider:disabled::-webkit-slider-thumb,
-.timeline-slider:disabled::-moz-range-thumb {
-  cursor: not-allowed;
-  opacity: 0.45;
+.control-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  border: 3px solid #ffffff;
+  background: #0f172a;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.24);
 }

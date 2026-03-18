@@ -1,10 +1,18 @@
-
+﻿
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import { startTransition, useEffect, useRef, useState } from "react";
 import coreURL from "@ffmpeg/core?url";
 import wasmURL from "@ffmpeg/core/wasm?url";
 import { bytesToLabel, formatClock, formatFfmpegTimestamp } from "./lib/time";
+import {
+  WHISPER_MODEL_ID,
+  WHISPER_SAMPLE_RATE,
+  decodeAudioBlobToMono,
+  formatTranscriptTimestamp,
+  normalizeTranscriptSegments,
+  transcriptSegmentsToText,
+} from "./lib/whisper";
 import dmmfxBanner from "./assets/dmmfx-banner.svg";
 
 const ACCEPT_ATTRIBUTE = "video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi";
@@ -422,6 +430,9 @@ export default function App() {
   const activeDurationRef = useRef(0);
   const activeJobRef = useRef("idle");
   const previewLoopRef = useRef(false);
+  const whisperWorkerRef = useRef(null);
+  const transcriptProgressTimerRef = useRef(null);
+  const transcriptScopeRef = useRef(null);
 
   const [dragActive, setDragActive] = useState(false);
   const [sourceFile, setSourceFile] = useState(null);
@@ -443,6 +454,15 @@ export default function App() {
   const [resultUrl, setResultUrl] = useState("");
   const [resultName, setResultName] = useState("");
   const [resultSize, setResultSize] = useState(0);
+  const [transcriptState, setTranscriptState] = useState("idle");
+  const [transcriptModelReady, setTranscriptModelReady] = useState(false);
+  const [transcriptProgress, setTranscriptProgress] = useState(0);
+  const [transcriptStatusMessage, setTranscriptStatusMessage] = useState("動画を読み込むと、選んだ範囲の音声をブラウザだけで文字起こしできます。");
+  const [transcriptErrorMessage, setTranscriptErrorMessage] = useState("");
+  const [transcriptSegments, setTranscriptSegments] = useState([]);
+  const [transcriptText, setTranscriptText] = useState("");
+  const [transcriptRange, setTranscriptRange] = useState(null);
+  const [transcriptProgressItems, setTranscriptProgressItems] = useState([]);
 
   useEffect(() => {
     sourceUrlRef.current = sourceUrl;
@@ -459,9 +479,152 @@ export default function App() {
   useEffect(() => {
     setEndText(formatEditableTime(trimEnd));
   }, [trimEnd]);
+  useEffect(() => {
+    let worker = null;
+
+    try {
+      worker = new Worker(new URL("./workers/whisperWorker.js", import.meta.url), { type: "module" });
+      whisperWorkerRef.current = worker;
+    } catch (error) {
+      console.error(error);
+      setTranscriptState("error");
+      setTranscriptStatusMessage("このブラウザでは文字起こしを開始できませんでした。");
+      setTranscriptErrorMessage("Web Worker を使えない環境のため、Whisper を読み込めませんでした。");
+      return undefined;
+    }
+
+    const upsertTranscriptProgressItem = (payload) => {
+      const label = payload.file
+        ? String(payload.file).split("/").pop()
+        : payload.name
+          ? String(payload.name)
+          : "whisper";
+      const id = payload.file ? String(payload.file) : payload.name ? String(payload.name) : label;
+      const ratio = Number.isFinite(payload.progress)
+        ? clamp(payload.progress, 0, 1)
+        : Number.isFinite(payload.loaded) && Number.isFinite(payload.total) && payload.total > 0
+          ? clamp(payload.loaded / payload.total, 0, 1)
+          : payload.status === "done" || payload.status === "ready"
+            ? 1
+            : 0;
+
+      setTranscriptProgressItems((currentItems) => {
+        const nextItem = {
+          id,
+          label,
+          ratio,
+          status: payload.status,
+        };
+        const existingIndex = currentItems.findIndex((item) => item.id === id);
+
+        if (existingIndex === -1) {
+          return [...currentItems, nextItem];
+        }
+
+        const nextItems = [...currentItems];
+        nextItems[existingIndex] = {
+          ...nextItems[existingIndex],
+          ...nextItem,
+        };
+        return nextItems;
+      });
+
+      setTranscriptState((currentState) => (currentState === "transcribing" ? currentState : "loading-model"));
+      setTranscriptStatusMessage("Whisper モデルを読み込んでいます...");
+      setTranscriptProgress((currentProgress) => Math.max(currentProgress, payload.status === "done" ? 0.72 : 0.38 + ratio * 0.28));
+    };
+
+    const handleWorkerMessage = (event) => {
+      const payload = event.data ?? {};
+      const hasAssetProgressMeta =
+        payload.file != null ||
+        payload.name != null ||
+        Number.isFinite(payload.progress) ||
+        Number.isFinite(payload.loaded) ||
+        Number.isFinite(payload.total);
+
+      if (["initiate", "progress", "done", "ready"].includes(payload.status) && hasAssetProgressMeta) {
+        upsertTranscriptProgressItem(payload);
+        return;
+      }
+
+      switch (payload.status) {
+        case "ready":
+          stopTranscriptProgressEstimate();
+          setTranscriptModelReady(true);
+          setTranscriptProgress((currentProgress) => Math.max(currentProgress, 0.72));
+          setTranscriptStatusMessage("Whisper の準備ができました。文字起こしを始めます...");
+          break;
+        case "transcribing":
+          setTranscriptState("transcribing");
+          setTranscriptProgress((currentProgress) => Math.max(currentProgress, 0.78));
+          setTranscriptStatusMessage("音声を文字に起こしています...");
+          startTranscriptProgressEstimate(transcriptScopeRef.current?.duration ?? 30);
+          break;
+        case "complete": {
+          stopTranscriptProgressEstimate();
+          const range = transcriptScopeRef.current;
+          const normalizedSegments = normalizeTranscriptSegments(payload.output, range?.start ?? 0);
+          const mergedText = transcriptSegmentsToText(normalizedSegments);
+
+          setTranscriptModelReady(true);
+          setTranscriptState("success");
+          setTranscriptProgress(1);
+          setTranscriptErrorMessage("");
+          setTranscriptSegments(normalizedSegments);
+          setTranscriptText(mergedText);
+          setTranscriptRange(
+            range
+              ? {
+                  start: range.start,
+                  end: range.end,
+                }
+              : null,
+          );
+          setTranscriptStatusMessage(
+            normalizedSegments.length > 0
+              ? "文字起こしが完了しました。行を押すと、その時刻へジャンプできます。"
+              : "文字起こしは完了しましたが、この範囲の音声はかなり少なめでした。",
+          );
+          break;
+        }
+        case "error":
+          stopTranscriptProgressEstimate();
+          setTranscriptState("error");
+          setTranscriptProgress(0);
+          setTranscriptStatusMessage("音声解析に失敗しました。");
+          setTranscriptErrorMessage(payload.message || "Whisper の解析に失敗しました。");
+          break;
+        default:
+          break;
+      }
+    };
+
+    const handleWorkerError = () => {
+      stopTranscriptProgressEstimate();
+      setTranscriptState("error");
+      setTranscriptProgress(0);
+      setTranscriptStatusMessage("音声解析に失敗しました。");
+      setTranscriptErrorMessage("Whisper worker の初期化中にエラーが起きました。");
+    };
+
+    worker.addEventListener("message", handleWorkerMessage);
+    worker.addEventListener("error", handleWorkerError);
+
+    return () => {
+      stopTranscriptProgressEstimate();
+      worker.removeEventListener("message", handleWorkerMessage);
+      worker.removeEventListener("error", handleWorkerError);
+      worker.terminate();
+      if (whisperWorkerRef.current === worker) {
+        whisperWorkerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
+      stopTranscriptProgressEstimate();
       if (sourceUrlRef.current) {
         URL.revokeObjectURL(sourceUrlRef.current);
       }
@@ -479,6 +642,47 @@ export default function App() {
       setExportProfile(getRecommendedProfile({ sourceFile, sourceDuration, clipDuration: Math.max(trimEnd - trimStart, 0), outputMode }));
     }
   }, [exportProfile, outputMode, sourceFile, sourceDuration, trimEnd, trimStart]);
+  function stopTranscriptProgressEstimate() {
+    if (transcriptProgressTimerRef.current) {
+      window.clearInterval(transcriptProgressTimerRef.current);
+      transcriptProgressTimerRef.current = null;
+    }
+  }
+
+  function startTranscriptProgressEstimate(durationSeconds) {
+    stopTranscriptProgressEstimate();
+
+    const estimateDurationMs = Math.max(Math.min(durationSeconds, 180), 12) * 350;
+    const startedAt = Date.now();
+
+    transcriptProgressTimerRef.current = window.setInterval(() => {
+      const elapsedRatio = clamp((Date.now() - startedAt) / estimateDurationMs, 0, 1);
+      const nextProgress = 0.78 + elapsedRatio * 0.18;
+      setTranscriptProgress((currentProgress) => Math.max(currentProgress, Math.min(nextProgress, 0.96)));
+
+      if (elapsedRatio >= 1) {
+        stopTranscriptProgressEstimate();
+      }
+    }, 180);
+  }
+
+  function resetTranscriptState(nextMessage = null) {
+    stopTranscriptProgressEstimate();
+    transcriptScopeRef.current = null;
+    setTranscriptState("idle");
+    setTranscriptProgress(0);
+    setTranscriptErrorMessage("");
+    setTranscriptSegments([]);
+    setTranscriptText("");
+    setTranscriptRange(null);
+    setTranscriptProgressItems([]);
+    setTranscriptStatusMessage(
+      nextMessage ??
+        (transcriptModelReady
+          ? "範囲が決まったら、音声をすぐに文字起こしできます。"
+          : "動画を読み込むと、選んだ範囲の音声をブラウザだけで文字起こしできます。"),
+    );
+  }
   function resetResult() {
     if (resultUrlRef.current) {
       URL.revokeObjectURL(resultUrlRef.current);
@@ -507,10 +711,6 @@ export default function App() {
 
         setLastLogLine(line);
 
-        if (activeJobRef.current !== "trimming") {
-          return;
-        }
-
         const loggedTime = parseLogTimestamp(line);
 
         if (loggedTime == null || activeDurationRef.current <= 0) {
@@ -518,7 +718,15 @@ export default function App() {
         }
 
         const ratio = clamp(loggedTime / activeDurationRef.current, 0, 0.98);
-        setProgress(0.16 + ratio * 0.8);
+
+        if (activeJobRef.current === "trimming") {
+          setProgress(0.16 + ratio * 0.8);
+          return;
+        }
+
+        if (activeJobRef.current === "extracting-audio") {
+          setTranscriptProgress(0.1 + ratio * 0.24);
+        }
       });
 
       ffmpegRef.current = ffmpeg;
@@ -606,6 +814,7 @@ export default function App() {
 
     previewLoopRef.current = false;
     resetResult();
+    resetTranscriptState("新しい動画です。範囲を決めたら音声を解析できます。");
 
     const nextUrl = URL.createObjectURL(file);
     const nextRecommendedProfile = getRecommendedProfile({
@@ -634,6 +843,117 @@ export default function App() {
     // ffmpeg は切り抜き時にだけ読み込み、最初のプレビューを軽く保つ。
   }
 
+  async function handleTranscribe() {
+    if (!sourceFile || sourceDuration <= 0 || trimEnd <= trimStart) {
+      return;
+    }
+
+    if (!whisperWorkerRef.current) {
+      setTranscriptState("error");
+      setTranscriptStatusMessage("このブラウザでは文字起こしを開始できませんでした。");
+      setTranscriptErrorMessage("Whisper worker を起動できませんでした。ページを再読み込みして再試行してください。");
+      return;
+    }
+
+    const scopeStart = trimStart;
+    const scopeEnd = trimEnd;
+    const scopeDuration = Math.max(scopeEnd - scopeStart, 0);
+    const inputPath = `transcript-source${getFileExtension(sourceFile.name)}`;
+    const outputPath = `transcript-audio-${Date.now().toString(36)}.wav`;
+    let ffmpeg = null;
+
+    previewLoopRef.current = false;
+    stopTranscriptProgressEstimate();
+    transcriptScopeRef.current = {
+      start: scopeStart,
+      end: scopeEnd,
+      duration: scopeDuration,
+    };
+    setTranscriptState("extracting");
+    setTranscriptProgress(0.08);
+    setTranscriptErrorMessage("");
+    setTranscriptSegments([]);
+    setTranscriptText("");
+    setTranscriptRange(null);
+    setTranscriptProgressItems([]);
+    setTranscriptStatusMessage("動画から音声を取り出しています...");
+    setLastLogLine("");
+    activeDurationRef.current = scopeDuration;
+    activeJobRef.current = "extracting-audio";
+
+    try {
+      ffmpeg = await ensureFFmpegLoaded();
+      await Promise.allSettled([ffmpeg.deleteFile(inputPath), ffmpeg.deleteFile(outputPath)]);
+      await ffmpeg.writeFile(inputPath, await fetchFile(sourceFile));
+
+      const exitCode = await ffmpeg.exec([
+        "-i",
+        inputPath,
+        "-ss",
+        formatFfmpegTimestamp(scopeStart),
+        "-t",
+        formatFfmpegTimestamp(scopeDuration),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        String(WHISPER_SAMPLE_RATE),
+        "-c:a",
+        "pcm_s16le",
+        outputPath,
+      ]);
+
+      if (exitCode !== 0) {
+        throw new Error("ffmpeg audio extraction failed");
+      }
+
+      const audioData = await ffmpeg.readFile(outputPath);
+      const audioBlob = new Blob([audioData instanceof Uint8Array ? audioData : new Uint8Array(audioData)], {
+        type: "audio/wav",
+      });
+      const waveform = await decodeAudioBlobToMono(audioBlob);
+
+      if (waveform.length === 0) {
+        throw new Error("audio track is empty");
+      }
+
+      setTranscriptState("loading-model");
+      setTranscriptProgress((currentProgress) => Math.max(currentProgress, 0.34));
+      setTranscriptStatusMessage(
+        transcriptModelReady
+          ? "Whisper を準備して、文字起こしを始めています..."
+          : "Whisper モデルを読み込んでいます...",
+      );
+
+      whisperWorkerRef.current.postMessage(
+        {
+          type: "transcribe",
+          audio: waveform.buffer,
+        },
+        [waveform.buffer],
+      );
+    } catch (error) {
+      console.error(error);
+      stopTranscriptProgressEstimate();
+      setTranscriptState("error");
+      setTranscriptProgress(0);
+      setTranscriptStatusMessage("音声解析に失敗しました。");
+      setTranscriptErrorMessage(
+        error instanceof Error && error.message === "audio track is empty"
+          ? "この範囲では音声が見つかりませんでした。話している区間を選んで再試行してください。"
+          : error instanceof Error && error.message
+            ? error.message
+            : "音声の取り出しに失敗しました。範囲を短くするか、mp4(H.264) 形式で再試行してください。",
+      );
+      transcriptScopeRef.current = null;
+    } finally {
+      activeJobRef.current = "idle";
+      activeDurationRef.current = 0;
+      if (ffmpeg) {
+        await Promise.allSettled([ffmpeg.deleteFile(inputPath), ffmpeg.deleteFile(outputPath)]);
+      }
+    }
+  }
   async function handleTrim() {
     if (!sourceFile || sourceDuration <= 0) {
       return;
@@ -666,6 +986,7 @@ export default function App() {
 
     previewLoopRef.current = false;
     resetResult();
+    resetTranscriptState("新しい動画です。範囲を決めたら音声を解析できます。");
     setErrorMessage("");
     setLastLogLine("");
     activeDurationRef.current = clipDuration;
@@ -772,7 +1093,9 @@ export default function App() {
     }
   }
 
-  const busy = engineState === "loading" || engineState === "trimming";
+  const engineBusy = engineState === "loading" || engineState === "trimming";
+  const transcriptBusy = ["extracting", "loading-model", "transcribing"].includes(transcriptState);
+  const busy = engineBusy || transcriptBusy;
   const clipDuration = Math.max(trimEnd - trimStart, 0);
   const removedDuration = Math.max(sourceDuration - clipDuration, 0);
   const keepRatio = sourceDuration > 0 ? Math.round((clipDuration / sourceDuration) * 100) : 0;
@@ -793,6 +1116,26 @@ export default function App() {
       : processingRisk.level === "warning"
         ? "border-orange-200 bg-orange-50 text-orange-800"
         : "border-emerald-200 bg-emerald-50 text-emerald-800";
+  const transcriptHasResult = transcriptSegments.length > 0 || transcriptText.length > 0;
+  const transcriptRangeChanged = Boolean(
+    transcriptRange &&
+      (Math.abs(transcriptRange.start - trimStart) > SLIDER_STEP || Math.abs(transcriptRange.end - trimEnd) > SLIDER_STEP),
+  );
+  const transcriptRequestLabel =
+    sourceDuration > 0 ? `${formatTranscriptTimestamp(trimStart)} - ${formatTranscriptTimestamp(trimEnd)}` : "--";
+  const transcriptResultLabel = transcriptRange
+    ? `${formatTranscriptTimestamp(transcriptRange.start)} - ${formatTranscriptTimestamp(transcriptRange.end)}`
+    : "--";
+  const transcriptActionLabel =
+    transcriptState === "extracting"
+      ? "音声を準備中..."
+      : transcriptState === "loading-model"
+        ? transcriptModelReady
+          ? "文字起こしを始めています..."
+          : "Whisper を読み込み中..."
+        : transcriptState === "transcribing"
+          ? "文字起こし中..."
+          : "音声を解析";
 
   return (
     <main className="relative min-h-screen overflow-hidden px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
@@ -809,20 +1152,21 @@ export default function App() {
               <div className="flex flex-wrap gap-2">
                 <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-800">100% Browser Side</span>
                 <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-orange-700">ffmpeg.wasm</span>
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-700">Whisper Wasm</span>
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-600">No Server Cost</span>
               </div>
               <div className="space-y-4">
                 <h1 className="max-w-4xl text-4xl font-black tracking-[-0.06em] text-slate-950 sm:text-5xl lg:text-6xl">
                   横動画を読み込んで、
                   <br />
-                  欲しい形で切り抜く。
+                  切り抜きも文字起こしも。
                 </h1>
                 <p className="max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
                   使い方はシンプルです。動画を選び、開始と終了を動かし、
                   <span className="font-bold text-slate-900">横のまま</span>
                   か
                   <span className="font-bold text-slate-900">縦 9:16</span>
-                  を選んで切り抜くだけ。処理はすべてブラウザ内で完結します。
+                  を選んで切り抜くだけ。必要ならそのまま Whisper で音声も文字起こしできます。処理はすべてブラウザ内で完結します。
                 </p>
               </div>
             </div>
@@ -856,7 +1200,7 @@ export default function App() {
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-slate-500">Preview</p>
               <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-950">大きなプレビューで、その場で範囲を決める</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">プレビューの下に開始と終了を置いているので、感覚的に使えます。</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">プレビューの下にトリミングと文字起こしを並べているので、感覚的に使えます。</p>
             </div>
 
             {!sourceFile ? (
@@ -1077,6 +1421,110 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+                <div className="rounded-[30px] border border-slate-200 bg-white/95 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="max-w-2xl">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Whisper Wasm</p>
+                      <h3 className="mt-2 text-xl font-black tracking-[-0.04em] text-slate-950">音声をそのまま文字起こし</h3>
+                      <p className="mt-2 text-sm leading-6 text-slate-500">今選んでいる範囲だけをブラウザ内で解析します。押すのは「音声を解析」だけです。</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-bold text-cyan-800">{WHISPER_MODEL_ID.replace("Xenova/", "")}</span>
+                      <span className={`rounded-full border px-3 py-2 text-xs font-bold ${transcriptModelReady ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                        {transcriptModelReady ? "Model Ready" : "Model Not Loaded"}
+                      </span>
+                      <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">範囲 {transcriptRequestLabel}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                    <Metric label="解析長" value={formatCompactTime(clipDuration)} strong />
+                    <Metric label="認識行数" value={transcriptHasResult ? String(transcriptSegments.length) : "--"} />
+                    <Metric label="音声モデル" value={transcriptModelReady ? "準備完了" : "初回読込"} />
+                  </div>
+
+                  <div className="mt-5 flex flex-col gap-3 rounded-[26px] border border-slate-200 bg-slate-50/85 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm leading-6 text-slate-700">{transcriptStatusMessage}</p>
+                    <button
+                      type="button"
+                      onClick={handleTranscribe}
+                      disabled={sourceDuration <= 0 || busy || clipDuration <= 0}
+                      className="inline-flex items-center justify-center rounded-full bg-[linear-gradient(135deg,#0f766e,#22c55e)] px-5 py-3 text-sm font-black text-white shadow-[0_14px_30px_rgba(15,118,110,0.22)] transition disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {transcriptActionLabel}
+                    </button>
+                  </div>
+
+                  <div className="mt-5 space-y-4">
+                    <div className="overflow-hidden rounded-full bg-slate-200">
+                      <div className={`h-3 rounded-full bg-[linear-gradient(90deg,#0ea5e9,#22c55e)] transition-[width] duration-300 ${transcriptBusy ? "animate-pulse" : ""}`} style={{ width: `${Math.max(Math.round(transcriptProgress * 100), transcriptBusy ? 10 : transcriptHasResult ? 100 : 0)}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="text-sm font-semibold leading-6 text-slate-800">{transcriptBusy ? "Whisper がブラウザ内で解析中です。" : transcriptHasResult ? "文字起こし結果の各行を押すと、その位置へジャンプできます。" : "音声付きの動画なら、そのまま時刻付きテキストを出せます。"}</p>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{Math.round(transcriptProgress * 100)}%</span>
+                    </div>
+
+                    {transcriptProgressItems.length > 0 ? (
+                      <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Model Download</p>
+                        <div className="mt-3 space-y-2">
+                          {transcriptProgressItems.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between gap-4 rounded-[18px] bg-slate-50 px-3 py-3">
+                              <p className="min-w-0 truncate text-xs font-bold text-slate-700">{item.label}</p>
+                              <span className="shrink-0 text-xs font-bold text-slate-500">{Math.round(item.ratio * 100)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {transcriptErrorMessage ? <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-4 text-sm leading-6 text-rose-700">{transcriptErrorMessage}</div> : null}
+
+                    {transcriptRangeChanged ? (
+                      <div className="rounded-[22px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-800">
+                        表示中の文字起こしは {transcriptResultLabel} の結果です。いまの範囲に合わせ直すときは、もう一度「音声を解析」を押してください。
+                      </div>
+                    ) : null}
+
+                    {transcriptHasResult ? (
+                      <div className="space-y-4">
+                        <div className="rounded-[24px] border border-slate-200 bg-slate-50/85 p-4">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Full Transcript</p>
+                          <p className="mt-3 text-sm leading-7 text-slate-700">{transcriptText}</p>
+                        </div>
+
+                        <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Timestamped Lines</p>
+                              <p className="mt-2 text-sm leading-6 text-slate-500">行を押すと、プレビューがその時刻へ移動します。</p>
+                            </div>
+                            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">{transcriptSegments.length} lines</span>
+                          </div>
+                          <div className="mt-4 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                            {transcriptSegments.map((segment) => (
+                              <button
+                                key={segment.id}
+                                type="button"
+                                onClick={() => seekVideo(segment.start)}
+                                className="group flex w-full items-start gap-3 rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:border-cyan-300 hover:bg-cyan-50"
+                              >
+                                <span className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-black text-white transition group-hover:bg-cyan-600">
+                                  [{formatTranscriptTimestamp(segment.start)}]
+                                </span>
+                                <p className="flex-1 text-sm leading-6 text-slate-700">{segment.text}</p>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50/80 px-5 py-8 text-center text-sm leading-6 text-slate-500">
+                        まだ文字起こし結果はありません。範囲を決めたら「音声を解析」を押すだけです。
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </Card>
@@ -1088,7 +1536,7 @@ export default function App() {
               <p className="mt-2 text-sm leading-6 text-slate-600">切り抜き中は進捗とログをここに出します。</p>
               <div className="mt-6 space-y-4">
                 <div className="overflow-hidden rounded-full bg-slate-200">
-                  <div className={`h-3 rounded-full bg-[linear-gradient(90deg,#ff7e53,#37c6ba)] transition-[width] duration-300 ${engineState === "loading" ? "animate-pulse" : ""}`} style={{ width: `${Math.max(Math.round(progress * 100), busy ? 10 : 0)}%` }} />
+                  <div className={`h-3 rounded-full bg-[linear-gradient(90deg,#ff7e53,#37c6ba)] transition-[width] duration-300 ${engineState === "loading" ? "animate-pulse" : ""}`} style={{ width: `${Math.max(Math.round(progress * 100), engineBusy ? 10 : 0)}%` }} />
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <p className="text-sm font-semibold leading-6 text-slate-800">{statusMessage}</p>
@@ -1218,7 +1666,7 @@ export default function App() {
                   disabled={sourceDuration <= 0 || busy || clipDuration <= 0}
                   className="inline-flex w-full items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#0f172a,#0e7490)] px-6 py-4 text-lg font-black text-white shadow-[0_18px_38px_rgba(8,47,73,0.28)] transition disabled:cursor-not-allowed disabled:opacity-55"
                 >
-                  {engineState === "loading" ? "エンジンを読み込み中..." : busy ? "切り抜き中..." : `${exportProfileLabel}で切り抜く`}
+                  {engineState === "loading" ? "エンジンを読み込み中..." : engineBusy ? "切り抜き中..." : `${exportProfileLabel}で切り抜く`}
                 </button>
                 {resultUrl ? (
                   <a href={resultUrl} download={resultName} className="inline-flex w-full items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#16a34a,#34d399)] px-6 py-4 text-lg font-black text-white shadow-[0_18px_38px_rgba(22,163,74,0.24)]">
@@ -1264,9 +1712,32 @@ export default function App() {
           <div className="mt-5">
             <AffiliateBanner />
           </div>
-          <p className="mt-6 text-center text-sm text-slate-400">Browser Video Trimmer powered by FFmpeg.wasm and A8 affiliate links</p>
+          <p className="mt-6 text-center text-sm text-slate-400">Browser Video Trimmer powered by FFmpeg.wasm, Whisper, and A8 affiliate links</p>
         </Card>
       </div>
     </main>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

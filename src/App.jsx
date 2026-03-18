@@ -382,14 +382,15 @@ function Metric({ label, value, strong = false }) {
 
 function AffiliateBanner() {
   return (
-    <div className="flex justify-center">
-      <div className="w-full max-w-[560px]">
+    <div className="border-t border-gray-800 pt-6">
+      <p className="text-center text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Recommended Financial Tools</p>
+      <div className="mt-6 flex flex-col items-center justify-center gap-8 md:flex-row md:items-stretch">
         <a
           href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
           rel="nofollow noopener noreferrer"
           target="_blank"
           aria-label="DMM FX の詳細を見る"
-          className="group flex w-full flex-col items-center gap-4 rounded-[28px] border border-slate-200 bg-white px-5 py-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.1)] sm:flex-row"
+          className="group flex w-full max-w-[420px] flex-col items-center gap-4 rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.1)] sm:flex-row"
         >
           <img
             src={dmmfxBanner}
@@ -399,23 +400,38 @@ function AffiliateBanner() {
             className="h-auto w-[168px] shrink-0 rounded-md border border-slate-100"
           />
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-600">Affiliate</p>
-            <p className="mt-2 text-lg font-black tracking-[-0.03em] text-slate-950">DMM FX の公式ページを見る</p>
-            <p className="mt-2 text-sm leading-6 text-slate-500">バナー全体がリンクです。クリックするとアフィリエイトリンク先へ移動します。</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-600">DMM FX</p>
+            <p className="mt-2 text-lg font-black tracking-[-0.03em] text-slate-950">FX を始めるなら DMM FX</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">口座開設や取引環境をチェックしたい人向けの公式ページです。</p>
           </div>
-          <span className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white transition group-hover:bg-emerald-600">
-            開く
+        </a>
+
+        <a
+          href="https://j.jp.moomoo.com/0ACr1m"
+          rel="nofollow noopener noreferrer"
+          target="_blank"
+          aria-label="moomoo証券で投資を始める"
+          className="group flex w-full max-w-[420px] flex-col justify-between rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#fff7ed,#ffffff)] px-6 py-6 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-[1px] hover:border-orange-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.1)]"
+        >
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-600">moomoo証券</p>
+            <p className="mt-3 text-2xl font-black tracking-[-0.04em] text-slate-950">moomoo証券で投資を始める</p>
+            <p className="mt-3 text-sm leading-6 text-slate-500">米国株や日本株をチェックしたい人向けに、シンプルな紹介リンクとして掲載しています。</p>
+          </div>
+          <span className="mt-5 inline-flex w-fit items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white transition group-hover:bg-orange-500">
+            詳細を見る
           </span>
         </a>
-        <img
-          border="0"
-          width="1"
-          height="1"
-          src="https://www10.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
-          alt=""
-          className="h-px w-px opacity-0"
-        />
       </div>
+
+      <img
+        border="0"
+        width="1"
+        height="1"
+        src="https://www10.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
+        alt=""
+        className="h-px w-px opacity-0"
+      />
     </div>
   );
 }
@@ -1706,18 +1722,15 @@ export default function App() {
             </Card>
           </div>
         </div>
-
         <Card className="px-6 py-8">
-          <p className="text-center text-xs font-bold uppercase tracking-[0.26em] text-slate-500">Sponsor</p>
-          <div className="mt-5">
-            <AffiliateBanner />
-          </div>
-          <p className="mt-6 text-center text-sm text-slate-400">Browser Video Trimmer powered by FFmpeg.wasm, Whisper, and A8 affiliate links</p>
+          <AffiliateBanner />
+          <p className="mt-6 text-center text-sm text-slate-400">Browser Video Trimmer powered by FFmpeg.wasm, Whisper, and affiliate links</p>
         </Card>
       </div>
     </main>
   );
 }
+
 
 
 

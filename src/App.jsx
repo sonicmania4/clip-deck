@@ -433,6 +433,23 @@ function AffiliateBanner() {
             詳細を見る
           </span>
         </a>
+
+        <a
+          href="https://px.a8.net/svt/ejp?a8mat=4AZHWD+DHTQEQ+50+2HV61T"
+          rel="nofollow noopener noreferrer"
+          target="_blank"
+          aria-label="おすすめのスポンサーリンクを見る"
+          className="group flex w-full max-w-[760px] justify-center rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.1)]"
+        >
+          <img
+            border="0"
+            width="728"
+            height="90"
+            alt="スポンサーリンク"
+            src="https://www27.a8.net/svt/bgt?aid=260317021816&wid=001&eno=01&mid=s00000000018015094000&mc=1"
+            className="h-auto w-full max-w-[728px] rounded-[18px] transition-opacity group-hover:opacity-80"
+          />
+        </a>
       </div>
 
       <img
@@ -440,6 +457,14 @@ function AffiliateBanner() {
         width="1"
         height="1"
         src="https://www10.a8.net/0.gif?a8mat=4AZHWD+DGMV76+1WP2+6F9M9"
+        alt=""
+        className="h-px w-px opacity-0"
+      />
+      <img
+        border="0"
+        width="1"
+        height="1"
+        src="https://www11.a8.net/0.gif?a8mat=4AZHWD+DHTQEQ+50+2HV61T"
         alt=""
         className="h-px w-px opacity-0"
       />
@@ -1741,6 +1766,7 @@ export default function App() {
     </main>
   );
 }
+
 
 
 

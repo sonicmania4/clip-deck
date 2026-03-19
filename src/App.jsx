@@ -14,7 +14,7 @@ import {
   transcriptSegmentsToText,
 } from "./lib/whisper";
 import dmmfxBanner from "./assets/dmmfx-banner.svg";
-import moomooIcon from "./assets/moomoo-icon.svg";
+import moomooLogo from "./assets/moomoo-logo-official.png";
 import onamaeBanner from "./assets/onamae-banner.svg";
 const ACCEPT_ATTRIBUTE = "video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi";
 const INPUT_PATH = "input-source";
@@ -418,16 +418,16 @@ function AffiliateBanner() {
           className="group flex w-full max-w-[560px] flex-col items-center gap-4 rounded-[28px] border border-orange-200 bg-[linear-gradient(135deg,#fff7ed,#ffffff)] px-5 py-5 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-[1px] hover:border-orange-300 hover:shadow-[0_20px_40px_rgba(15,23,42,0.1)] sm:flex-row"
         >
           <img
-            src={moomooIcon}
-            alt="moomoo証券 アイコン"
-            width="160"
-            height="112"
-            className="h-auto w-[160px] shrink-0 rounded-[20px] border border-orange-100"
+            src={moomooLogo}
+            alt="moomoo証券 公式ロゴ"
+            width="184"
+            height="56"
+            className="h-auto w-[184px] shrink-0 rounded-[20px] border border-orange-100 bg-white px-5 py-6 shadow-sm"
           />
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-600">moomoo証券</p>
-            <p className="mt-2 text-lg font-black tracking-[-0.03em] text-slate-950">moomoo証券で投資を始める</p>
-            <p className="mt-2 text-sm leading-6 text-slate-500">アプリで銘柄チェックを始めたい人向けの紹介リンクです。DMM FX の下に並ぶよう固定表示しています。</p>
+            <p className="mt-2 text-lg font-black tracking-[-0.03em] text-slate-950">moomoo証券で口座開設して、少額投資を始める</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">米国株は1ドルから、日本株も1株から始めやすいのが魅力です。銘柄探しから分析までアプリで進めたい人は、まず口座を作って使い心地をチェックできます。</p>
           </div>
           <span className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white transition group-hover:bg-orange-500">
             詳細を見る
@@ -1768,6 +1768,7 @@ export default function App() {
     </main>
   );
 }
+
 
 
 

@@ -15,7 +15,7 @@ import {
 } from "./lib/whisper";
 import dmmfxBanner from "./assets/dmmfx-banner.svg";
 import moomooIcon from "./assets/moomoo-icon.svg";
-
+import onamaeBanner from "./assets/onamae-banner.svg";
 const ACCEPT_ATTRIBUTE = "video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi";
 const INPUT_PATH = "input-source";
 const SLIDER_STEP = 0.05;
@@ -445,8 +445,8 @@ function AffiliateBanner() {
             border="0"
             width="728"
             height="90"
-            alt="スポンサーリンク"
-            src="https://www27.a8.net/svt/bgt?aid=260317021816&wid=001&eno=01&mid=s00000000018015094000&mc=1"
+            alt="お名前.com バナー"
+            src={onamaeBanner}
             className="h-auto w-full max-w-[728px] rounded-[18px] transition-opacity group-hover:opacity-80"
           />
         </a>
@@ -1766,6 +1766,8 @@ export default function App() {
     </main>
   );
 }
+
+
 
 
 

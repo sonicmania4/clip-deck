@@ -1,0 +1,66 @@
+﻿<svg width="1456" height="180" viewBox="0 0 1456 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bannerBg" x1="0" y1="0" x2="1456" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#CF0000" />
+      <stop offset="1" stop-color="#FF2A00" />
+    </linearGradient>
+    <linearGradient id="gold" x1="724" y1="8" x2="846" y2="150" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF0A8" />
+      <stop offset="0.5" stop-color="#FFD54A" />
+      <stop offset="1" stop-color="#C88900" />
+    </linearGradient>
+    <radialGradient id="spark" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1100 36) rotate(90) scale(120 300)">
+      <stop stop-color="#FFB2A1" stop-opacity="0.55" />
+      <stop offset="1" stop-color="#FFB2A1" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="1456" height="180" rx="24" fill="url(#bannerBg)" />
+  <rect x="0.75" y="0.75" width="1454.5" height="178.5" rx="23.25" stroke="#FF7960" stroke-width="1.5" />
+  <rect x="0" y="101" width="1456" height="79" fill="#23252B" />
+  <rect x="0" y="0" width="230" height="180" fill="#D40000" />
+  <g opacity="0.22" fill="#FFB2A1">
+    <circle cx="265" cy="34" r="10" />
+    <circle cx="292" cy="74" r="8" />
+    <circle cx="338" cy="48" r="6" />
+    <circle cx="420" cy="30" r="11" />
+    <circle cx="468" cy="82" r="13" />
+    <circle cx="566" cy="48" r="9" />
+    <circle cx="620" cy="24" r="7" />
+    <circle cx="730" cy="62" r="10" />
+    <circle cx="946" cy="28" r="12" />
+    <circle cx="1280" cy="34" r="9" />
+    <circle cx="1362" cy="60" r="6" />
+  </g>
+  <path d="M420 0L560 180" stroke="#FF8C73" stroke-opacity="0.24" stroke-width="2" />
+  <path d="M1120 0L980 180" stroke="#FF8C73" stroke-opacity="0.24" stroke-width="2" />
+  <ellipse cx="1100" cy="34" rx="280" ry="120" fill="url(#spark)" />
+
+  <g>
+    <rect x="40" y="54" width="128" height="44" rx="12" fill="#FFF04D" />
+    <text x="104" y="84" text-anchor="middle" fill="#222" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800">お名前.com</text>
+    <text x="104" y="114" text-anchor="middle" fill="#FFF7F2" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700">https://www.onamae.com</text>
+    <text x="104" y="132" text-anchor="middle" fill="#FFE4D9" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700">by GMO</text>
+    <text x="32" y="34" fill="#FFF6EE" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700">ドメイン取るなら 国内最大級サービス</text>
+  </g>
+
+  <text x="575" y="36" text-anchor="middle" fill="#FFF0E9" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="800">ドメイン登録数</text>
+  <text x="360" y="116" fill="#FFFDF9" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="78" font-weight="900">国内シェア</text>
+  <text x="783" y="115" fill="url(#gold)" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="118" font-weight="900">No.1</text>
+
+  <g>
+    <rect x="862" y="18" width="127" height="46" rx="8" fill="#1E2025" />
+    <rect x="862" y="70" width="127" height="46" rx="8" fill="#1E2025" />
+    <rect x="862" y="122" width="127" height="40" rx="8" fill="#1E2025" />
+    <text x="925.5" y="49" text-anchor="middle" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="800">.com</text>
+    <text x="925.5" y="101" text-anchor="middle" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="800">.net</text>
+    <text x="925.5" y="149" text-anchor="middle" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="800">.jp</text>
+  </g>
+
+  <text x="1008" y="114" fill="#FFFFFF" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="112" font-weight="900">0円から</text>
+
+  <g>
+    <circle cx="646" cy="128" r="18" fill="#FFF04D" stroke="#23252B" stroke-width="4" />
+    <path d="M646 110C651 101 666 101 671 112C676 123 670 131 659 134L664 145H650L646 136H637L634 145H621L625 130C620 127 617 122 617 116C617 106 626 100 636 102L646 110Z" fill="#FFFDF7" stroke="#23252B" stroke-width="4" stroke-linejoin="round" />
+  </g>
+  <text x="690" y="145" fill="#FFF8F0" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800">ドメインは早い者勝ち</text>
+</svg>

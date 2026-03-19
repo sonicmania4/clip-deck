@@ -1209,16 +1209,18 @@ export default function App() {
               </div>
               <div className="space-y-4">
                 <h1 className="max-w-4xl text-4xl font-black tracking-[-0.06em] text-slate-950 sm:text-5xl lg:text-6xl">
-                  横動画を読み込んで、
+                  横動画を、
                   <br />
-                  切り抜きも文字起こしも。
+                  縦動画にそのまま切り抜ける。
                 </h1>
                 <p className="max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
-                  使い方はシンプルです。動画を選び、開始と終了を動かし、
+                  SNS 用に
+                  <span className="font-bold text-slate-900">横動画を縦 9:16 へ切り抜きたい</span>
+                  ときのためのツールです。動画を選んで、残したい範囲を決めるだけで、
                   <span className="font-bold text-slate-900">横のまま</span>
-                  か
-                  <span className="font-bold text-slate-900">縦 9:16</span>
-                  を選んで切り抜くだけ。必要ならそのまま Whisper で音声も文字起こしできます。処理はすべてブラウザ内で完結します。
+                  でも
+                  <span className="font-bold text-slate-900">縦動画</span>
+                  でも書き出せます。必要ならそのまま Whisper で音声の文字起こしもできます。
                 </p>
               </div>
             </div>
@@ -1766,6 +1768,7 @@ export default function App() {
     </main>
   );
 }
+
 
 
 
